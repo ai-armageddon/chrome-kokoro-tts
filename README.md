@@ -1,44 +1,61 @@
 # Kokoro TTS Chrome Extension
 
-A Chrome extension that provides text-to-speech functionality using the Kokoro TTS API. This extension allows you to:
+A Chrome extension that provides text-to-speech functionality by connecting to a local instance of the Kokoro TTS API. 
 
-- Convert selected text to speech directly from the context menu
-- Use a popup interface to enter custom text for TTS
-- Control playback with play/pause/stop functionality
-- Continue audio playback even when the popup is closed
+> **Important Note**: This extension requires a separate installation of the Kokoro TTS API running locally. The API is not included in this extension and must be set up separately.
 
 ## Features
 
-- 🎙️ High-quality TTS using Kokoro TTS API
+- 🎙️ Connects to your local Kokoro TTS API instance
 - 🖱️ Right-click on selected text to speak it
-- 🎚️ Control playback with intuitive controls
-- 🎧 Background audio playback
-- 🎨 Clean and modern UI
+- 🎚️ Playback controls with pause/resume functionality
+- 🎧 Background audio that continues when popup is closed
+- 🎨 Clean and intuitive user interface
 
 ## Prerequisites
 
 Before using this extension, you'll need:
 
-1. Kokoro TTS API running locally on `http://localhost:8000`
+1. **Kokoro TTS API** - A local instance must be running on `http://localhost:8000`
+   - The API is not included with this extension
+   - You can find the Kokoro TTS API at: [Kokoro TTS GitHub Repository](https://github.com/kokoro-ai/kokoro-tts) (or the appropriate repository)
+   - Follow the API's setup instructions to run it locally
+
 2. Google Chrome or any Chromium-based browser
 
 ## Installation
 
-### 1. Clone the repository
+### 1. Set up Kokoro TTS API (Required)
 
+Before installing this extension, you must have the Kokoro TTS API running locally:
+
+```bash
+# Example - replace with actual installation instructions for Kokoro TTS API
+git clone https://github.com/kokoro-ai/kokoro-tts.git
+cd kokoro-tts
+# Follow the API's setup instructions
+# Make sure the API is running on http://localhost:8000
+```
+
+### 2. Install the Chrome Extension
+
+1. Clone this repository:
 ```bash
 git clone https://github.com/yourusername/kokoro-tts-extension.git
 cd kokoro-tts-extension
 ```
 
-### 2. Load the extension in Chrome
-
-1. Open Chrome and navigate to `chrome://extensions/`
-2. Enable "Developer mode" (toggle in the top-right corner)
-3. Click "Load unpacked" and select the extension directory
-4. The extension should now appear in your Chrome toolbar
+2. Load the extension in Chrome:
+   - Open Chrome and go to `chrome://extensions/`
+   - Enable "Developer mode" (toggle in top-right corner)
+   - Click "Load unpacked" and select the extension directory
+   - The extension icon should appear in your Chrome toolbar
 
 ## Usage
+
+1. **First, ensure the Kokoro TTS API is running** on `http://localhost:8000`
+2. Use the extension through the popup or context menu
+3. Control playback using the provided controls
 
 ### Using the Popup
 
@@ -61,16 +78,20 @@ cd kokoro-tts-extension
 
 ## Development
 
+This extension is designed to work with a local Kokoro TTS API instance. The API handles all the text-to-speech processing, while this extension provides the browser interface.
+
 ### Project Structure
 
-- `background.js` - Handles background processes and audio playback
-- `content.js` - Manages the in-page play button for selected text
-- `popup/` - Contains the popup UI and logic
-- `offscreen/` - Handles audio playback in a separate context
+- `background.js` - Manages communication with the Kokoro TTS API
+- `content.js` - Handles in-page text selection and play button
+- `popup/` - Contains the extension's popup interface
+- `offscreen/` - Manages audio playback in a separate context
 
-### Building
+## Troubleshooting
 
-No build step is required as this is a vanilla JavaScript extension.
+- **"Error playing audio"**: Ensure the Kokoro TTS API is running on `http://localhost:8000`
+- **No sound**: Check your system volume and ensure the API is properly configured
+- **Connection issues**: Verify no other service is using port 8000
 
 ## Contributing
 
@@ -80,7 +101,6 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Acknowledgments
+## Disclaimer
 
-- Kokoro TTS for the high-quality text-to-speech API
-- Chrome Extension documentation for the excellent API reference
+This extension is not affiliated with or endorsed by the Kokoro TTS project. It is a third-party client that connects to a locally running instance of the Kokoro TTS API.
