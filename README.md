@@ -1,18 +1,15 @@
-# Kokoro TTS Chrome Extension - Complete Package
+# Kokoro TTS Chrome Extension
 
-A complete, self-contained text-to-speech solution that includes both the Kokoro TTS API server and a Chrome extension for easy browser-based access.
+🎙️ A high-quality text-to-speech Chrome extension powered by Kokoro TTS with local API server support.
 
-## 🎯 What's Included
+## 🌐 Repository
 
-- 🖥️ **Local Kokoro TTS API Server** - FastAPI-based backend with multiple voices
-- 🌐 **Chrome Extension** - Browser interface for text-to-speech
-- 🚀 **One-click Setup** - Startup scripts and PM2 process management
-- 📚 **Complete Documentation** - Setup guides and usage instructions
+**GitHub**: https://github.com/ai-armageddon/chrome-kokoro-tts.git
 
-## Features
+## 🎯 Features
 
 - 🎙️ **High-quality voices** - 9 different voice options (American & British English)
-- 🖱️ **Right-click to speak** - Context menu integration for selected text
+- 🖱️ **Text selection icon** - Blue play button appears next to selected text
 - 🎚️ **Playback controls** - Pause, resume, and stop functionality
 - 🎧 **Background audio** - Continues playing when popup is closed
 - 🎨 **Clean interface** - Intuitive user-friendly design
@@ -31,8 +28,8 @@ A complete, self-contained text-to-speech solution that includes both the Kokoro
 
 ```bash
 # Clone this repository
-git clone <repository-url>
-cd Kokoro-Chrome-TTS
+git clone https://github.com/ai-armageddon/chrome-kokoro-tts.git
+cd chrome-kokoro-tts
 
 # Create virtual environment
 python3 -m venv venv
@@ -62,18 +59,19 @@ chmod +x start_kokoro_api.sh
 
 ## Usage
 
+### Text Selection (Primary Method)
+
+1. **Select any text** on a webpage
+2. **Blue play button (▶)** appears next to your selection
+3. **Click the play button** to start speaking the selected text
+4. **Audio controls** appear for pause/stop functionality
+
 ### Using the Popup
 
 1. Click the extension icon in the Chrome toolbar
 2. Enter text in the textarea or click "Use Selected" to get selected text
 3. Choose a voice from the dropdown
 4. Click "Speak Text" to start playback
-
-### Using Context Menu
-
-1. Select any text on a webpage
-2. Right-click and select "Speak with Kokoro TTS"
-3. The selected text will be spoken immediately
 
 ### Available Voices
 
@@ -91,24 +89,25 @@ chmod +x start_kokoro_api.sh
 
 ### Playback Controls
 
-- **Pause**: Pause the current audio
-- **Resume**: Resume paused audio
-- **Stop**: Stop playback completely
+- **Play Button (▶)**: Appears next to selected text - click to speak
+- **Mini Controls**: Replace play button during playback
+  - **Pause (❚❚)**: Pause current audio
+  - **Play (▶)**: Resume paused audio  
+  - **Stop (■)**: Stop playback completely
+- **Fixed Pause Button**: Red button in top-right corner during playback
 
 ## Project Structure
 
 ```
-Kokoro-Chrome-TTS/
+chrome-kokoro-tts/
 ├── api_server.py              # FastAPI TTS server
 ├── start_kokoro_api.sh        # Startup script
 ├── ecosystem.config.js        # PM2 configuration
 ├── requirements.txt           # Python dependencies
-├── venv/                      # Python virtual environment
-├── logs/                      # Server logs
 ├── manifest.json             # Chrome extension manifest
 ├── popup.html               # Extension popup UI
 ├── popup.js                 # Popup logic
-├── content.js               # Page interaction script
+├── content.js               # Page interaction script (text selection)
 ├── background.js            # Background script
 ├── offscreen.html           # Offscreen document
 ├── offscreen.js             # Offscreen script
@@ -150,10 +149,29 @@ pm2 stop kokoro-tts-api
 
 ## Troubleshooting
 
-- **"Cannot connect to Kokoro API"**: Ensure the API server is running on `http://localhost:8000`
-- **No sound**: Check your system volume and ensure the API is properly configured
-- **Connection issues**: Verify no other service is using port 8000
-- **Extension not loading**: Check Chrome developer console for errors
+### Common Issues
+
+- **"Play button doesn't appear when selecting text"**: 
+  - Reload the extension in `chrome://extensions/`
+  - Check browser console for JavaScript errors
+  - Ensure content.js is properly loaded
+
+- **"Cannot connect to Kokoro API"**: 
+  - Ensure the API server is running on `http://localhost:8000`
+  - Check if the server started successfully
+
+- **No sound**: 
+  - Check your system volume
+  - Ensure browser has audio permissions
+  - Verify API is properly configured
+
+- **Connection issues**: 
+  - Verify no other service is using port 8000
+  - Check firewall settings
+
+- **Extension not loading**: 
+  - Check Chrome developer console for errors
+  - Ensure all files are present in the directory
 
 For detailed troubleshooting and advanced usage, see [CHROME_EXTENSION_GUIDE.md](CHROME_EXTENSION_GUIDE.md).
 
