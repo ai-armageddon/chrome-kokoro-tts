@@ -146,6 +146,19 @@
       transform: translateY(-1px);
     }
     
+    .secondary-btn:disabled,
+    .secondary-btn.disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      background: rgba(255,255,255,0.05);
+    }
+    
+    .secondary-btn:disabled:hover,
+    .secondary-btn.disabled:hover {
+      background: rgba(255,255,255,0.05);
+      transform: none;
+    }
+    
     .status {
       margin-top: 16px;
       padding: 12px;
@@ -183,6 +196,76 @@
       opacity: 0.7;
       margin-top: 4px;
     }
+    
+    .speed-control {
+      margin-top: 12px;
+    }
+    
+    .speed-slider {
+      width: 100%;
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(255,255,255,0.2);
+      outline: none;
+      -webkit-appearance: none;
+      appearance: none;
+      margin: 8px 0;
+    }
+    
+    .speed-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: white;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    
+    .speed-slider::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: white;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      border: none;
+    }
+    
+    .speed-value {
+      font-size: 12px;
+      text-align: center;
+      opacity: 0.8;
+      margin-top: 4px;
+    }
+    
+    .speed-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .reset-speed-btn {
+      padding: 4px 8px;
+      font-size: 11px;
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 4px;
+      background: rgba(255,255,255,0.1);
+      color: white;
+      cursor: pointer;
+      transition: all 0.2s;
+      min-width: 30px;
+    }
+    
+    .reset-speed-btn:hover {
+      background: rgba(255,255,255,0.2);
+    }
+    
+    .reset-speed-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
   </style>
 </head>
 <body>
@@ -209,6 +292,16 @@
         <option value="am_michael">AM Michael - Deep Male</option>
       </select>
       <div class="voice-info">Choose your preferred voice style</div>
+    </div>
+    
+    <div class="form-group">
+      <label for="speed">Speaking speed:</label>
+      <div class="speed-controls">
+        <input type="range" id="speed" class="speed-slider" min="0.5" max="2.0" step="0.1" value="1.0">
+        <button id="resetSpeed" class="reset-speed-btn">1x</button>
+      </div>
+      <div class="speed-value" id="speedValue">1.0x</div>
+      <div class="voice-info">Adjust the speaking speed (0.5x - 2.0x)</div>
     </div>
     
     <div class="button-group">

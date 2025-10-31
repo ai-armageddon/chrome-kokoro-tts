@@ -17,6 +17,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; // Keep message channel open for async response
   }
   
+  if (request.action === 'queueAudio') {
+    if (offscreenDocumentCreated) {
+      sendToOffscreen(request).then((response) => {
+        sendResponse(response);
+      }).catch((error) => {
+        console.error('Background audio queue error:', error);
+        sendResponse({ success: false, error: error.message });
+      });
+    } else {
+      sendResponse({ success: false, error: 'No audio playing - queue not available' });
+    }
+    return true;
+  }
+  
   if (request.action === 'pauseAudio' || request.action === 'resumeAudio' || 
       request.action === 'stopAudio' || request.action === 'getAudioStatus') {
     if (offscreenDocumentCreated) {
@@ -31,6 +45,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     return true;
   }
+  
+  if (request.action === 'setSpeed' || request.action === 'getSpeed') {
+    if (offscreenDocumentCreated) {
+      sendToOffscreen(request).then((response) => {
+        sendResponse(response);
+      }).catch((error) => {
+        console.error('Background speed control error:', error);
+        sendResponse({ success: false, error: error.message });
+      });
+    } else {
+      if (request.action === 'getSpeed') {
+        sendResponse({ speed: 1.0 }); // Default speed
+      } else {
+        sendResponse({ success: false, error: 'No audio playing' });
+      }
+    }
+    return true;
+  }
 });
 
 // Listen for messages from offscreen script
@@ -42,6 +74,45 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     chrome.tabs.query({}, (tabs) => {
       tabs.forEach(tab => {
         chrome.tabs.sendMessage(tab.id, { action: 'audioEnded' }).catch(() => {
+          // Ignore errors for tabs that don't have content script
+        });
+      });
+    });
+  }
+  
+  if (request.action === 'audioStarted') {
+    console.log('Background received audio started notification');
+    
+    // Notify all content scripts that audio started
+    chrome.tabs.query({}, (tabs) => {
+      tabs.forEach(tab => {
+        chrome.tabs.sendMessage(tab.id, { action: 'audioStarted' }).catch(() => {
+          // Ignore errors for tabs that don't have content script
+        });
+      });
+    });
+  }
+  
+  if (request.action === 'audioPaused') {
+    console.log('Background received audio paused notification');
+    
+    // Notify all content scripts that audio paused
+    chrome.tabs.query({}, (tabs) => {
+      tabs.forEach(tab => {
+        chrome.tabs.sendMessage(tab.id, { action: 'audioPaused' }).catch(() => {
+          // Ignore errors for tabs that don't have content script
+        });
+      });
+    });
+  }
+  
+  if (request.action === 'audioResumed') {
+    console.log('Background received audio resumed notification');
+    
+    // Notify all content scripts that audio resumed
+    chrome.tabs.query({}, (tabs) => {
+      tabs.forEach(tab => {
+        chrome.tabs.sendMessage(tab.id, { action: 'audioResumed' }).catch(() => {
           // Ignore errors for tabs that don't have content script
         });
       });
