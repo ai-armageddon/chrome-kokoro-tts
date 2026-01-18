@@ -1196,7 +1196,7 @@ function highlightChunk(chunkText, chunkIndex) {
       console.log('Highlighting processed chunk', i, ':', chunks[i].substring(0, 30) + '...');
       const chunkStart = fullText.indexOf(chunks[i], currentPos);
       if (chunkStart !== -1) {
-        highlightTextInRange(chunks[i], '#E3F2FD', '#000');
+        highlightTextInRange(chunks[i], '#E1F5FE', '#01579B'); // Light blue background, dark blue text
         currentPos = chunkStart + chunks[i].length;
       }
     }
@@ -1206,11 +1206,22 @@ function highlightChunk(chunkText, chunkIndex) {
       console.log('Highlighting current chunk', chunkIndex, ':', chunks[chunkIndex].substring(0, 30) + '...');
       const chunkStart = fullText.indexOf(chunks[chunkIndex], currentPos);
       if (chunkStart !== -1) {
-        highlightTextInRange(chunks[chunkIndex], '#FFE066', '#000');
+        highlightTextInRange(chunks[chunkIndex], '#FFF59D', '#F57F17'); // Yellow background, dark yellow text
       }
     }
     
     console.log('Highlighting complete!');
+    
+    // Check if highlights were applied
+    setTimeout(() => {
+      const highlights = document.querySelectorAll('[data-highlight="true"]');
+      console.log('Found', highlights.length, 'highlighted elements on page');
+      if (highlights.length > 0) {
+        console.log('First highlight element:', highlights[0]);
+        console.log('First highlight styles:', window.getComputedStyle(highlights[0]));
+      }
+    }, 100);
+    
     console.log('=== END HIGHLIGHT DEBUG ===');
     
   } catch (e) {
@@ -1288,10 +1299,20 @@ function highlightTextInRange(textToHighlight, bgColor, textColor) {
     span.style.backgroundColor = bgColor;
     span.style.color = textColor;
     span.style.transition = 'background-color 0.3s ease';
-    span.style.borderRadius = '2px';
+    span.style.borderRadius = '3px';
+    span.style.padding = '2px 1px';
     span.style.boxShadow = '0 1px 3px rgba(0,0,0,0.2)';
+    span.style.position = 'relative';
+    
+    // Add a debug attribute
+    span.setAttribute('data-highlight', 'true');
+    span.setAttribute('data-chunk', textToHighlight.substring(0, 20));
     
     highlightedSpans.push(span);
+    
+    console.log('Created highlight span for:', textToHighlight.substring(0, 30) + '...');
+    console.log('Span element:', span);
+    console.log('Span background color:', span.style.backgroundColor);
     
     // Scroll the highlight into view if needed
     span.scrollIntoView({ behavior: 'smooth', block: 'center' });
