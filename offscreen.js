@@ -114,17 +114,6 @@ async function playAudio(audioUrl, chunkText = null, chunkIndex = null) {
     currentAudio.addEventListener('canplay', () => {
       console.log('Offscreen audio can play, starting playback');
       
-      // Send audioStarted notification only once
-      if (!audioStartedSent) {
-        audioStartedSent = true;
-        chrome.runtime.sendMessage({ 
-          action: 'audioStarted',
-          chunkText: chunkText,
-          chunkIndex: chunkIndex
-        });
-        console.log('Sent audioStarted notification for chunk:', chunkIndex);
-      }
-      
       // Try to play with user interaction
       const playPromise = currentAudio.play();
       
@@ -146,6 +135,20 @@ async function playAudio(audioUrl, chunkText = null, chunkIndex = null) {
             }
           }, 100);
         });
+      }
+    });
+    
+    // Use the play event to notify when audio actually starts
+    currentAudio.addEventListener('play', () => {
+      // Send audioStarted notification only once
+      if (!audioStartedSent) {
+        audioStartedSent = true;
+        chrome.runtime.sendMessage({ 
+          action: 'audioStarted',
+          chunkText: chunkText,
+          chunkIndex: chunkIndex
+        });
+        console.log('Sent audioStarted notification for chunk:', chunkIndex);
       }
     });
     
@@ -262,6 +265,7 @@ function processNextInQueue() {
   isQueueProcessing = true;
   const nextItem = audioQueue.shift();
   console.log('Processing next audio in queue:', nextItem.url);
+  console.log('Current speed when processing queue:', currentSpeed);
   
   // Play the next audio
   playAudio(nextItem.url, nextItem.text, nextItem.index).catch(error => {
