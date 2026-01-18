@@ -5,6 +5,14 @@ let audioQueue = [];
 let isQueueProcessing = false;
 let currentSpeed = 1.0;
 
+// Initialize speed from background script
+chrome.runtime.sendMessage({ action: 'getSpeed' }, (speedResponse) => {
+  if (speedResponse && speedResponse.speed !== undefined) {
+    currentSpeed = speedResponse.speed;
+    console.log('Offscreen: Initialized speed from background:', currentSpeed);
+  }
+});
+
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Offscreen received message:', request);
@@ -60,8 +68,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.action === 'queueAudio') {
-    queueAudio(request.audioUrl, request.chunkText, request.chunkIndex);
-    sendResponse({ success: true });
+    // Get current speed before queuing
+    chrome.runtime.sendMessage({ action: 'getSpeed' }, (speedResponse) => {
+      if (speedResponse && speedResponse.speed !== undefined) {
+        currentSpeed = speedResponse.speed;
+        console.log('Offscreen: Got speed from background for queue:', currentSpeed);
+      }
+      
+      queueAudio(request.audioUrl, request.chunkText, request.chunkIndex);
+      sendResponse({ success: true });
+    });
     return true;
   }
   
