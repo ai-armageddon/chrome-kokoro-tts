@@ -20,23 +20,11 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Lifespan context manager
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup
-    logger.info("Starting Kokoro TTS API...")
-    # Pre-initialize English pipeline
-    get_pipeline('a')
-    yield
-    # Shutdown
-    logger.info("Shutting down Kokoro TTS API...")
-
 # Initialize FastAPI app
 app = FastAPI(
     title="Kokoro TTS API",
     description="Text-to-Speech API using Kokoro model",
-    version="1.0.0",
-    lifespan=lifespan
+    version="1.0.0"
 )
 
 # Add CORS middleware
@@ -47,6 +35,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Startup event
+@app.on_event("startup")
+async def startup_event():
+    logger.info("Starting Kokoro TTS API...")
+    # Pre-initialize English pipeline
+    get_pipeline('a')
 
 # Initialize Kokoro pipelines
 pipelines = {}

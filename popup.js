@@ -41,6 +41,9 @@ document.addEventListener('DOMContentLoaded', () => {
     speedValue.textContent = newSpeed + 'x';
     updateResetSpeedButton(newSpeed);
     
+    // Save speed to localStorage
+    localStorage.setItem('kokoro-tts-speed', newSpeed.toString());
+    
     // Apply speed change immediately to current audio
     chrome.runtime.sendMessage({ action: 'setSpeed', speed: newSpeed }, (response) => {
       if (response && response.success) {
@@ -51,11 +54,22 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Get current speed when popup opens
   chrome.runtime.sendMessage({ action: 'getSpeed' }, (response) => {
-    if (response && response.speed !== undefined) {
-      speedSlider.value = response.speed;
-      speedValue.textContent = response.speed + 'x';
-      updateResetSpeedButton(response.speed);
+    let speed = 1.0; // Default speed
+    
+    // Try to get saved speed from localStorage first
+    const savedSpeed = localStorage.getItem('kokoro-tts-speed');
+    if (savedSpeed) {
+      speed = parseFloat(savedSpeed);
+    } else if (response && response.speed !== undefined) {
+      speed = response.speed;
     }
+    
+    speedSlider.value = speed;
+    speedValue.textContent = speed + 'x';
+    updateResetSpeedButton(speed);
+    
+    // Apply the saved speed
+    chrome.runtime.sendMessage({ action: 'setSpeed', speed: speed });
   });
 });
 

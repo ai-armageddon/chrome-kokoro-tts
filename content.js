@@ -494,6 +494,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
   }
   
+  if (request.action === 'audioStarted') {
+    console.log('Audio started notification received for chunk:', request.chunkIndex);
+    
+    // Update chunk indicator
+    if (totalChunks > 1) {
+      updateChunkIndicator((request.chunkIndex || 0) + 1, totalChunks);
+    }
+    
+    // Highlight the current chunk
+    if (highlightedRange && request.chunkText) {
+      try {
+        highlightChunk(request.chunkText, request.chunkIndex || 0);
+      } catch (e) {
+        console.error('Error highlighting chunk:', e);
+      }
+    }
+  }
+  
   if (request.action === 'chunkUpdate') {
     console.log('Chunk update received:', request);
     currentChunk = request.currentChunk;
@@ -613,7 +631,7 @@ async function generateSpeechFromSelectedText() {
     const lang_code = voice[0]; // Extract language code from voice
     
     // Check if text needs chunking
-    if (selectedText.length > 500) {
+    if (selectedText.length > 400) {
       return await speakChunkedText(selectedText, voice);
     }
     
@@ -769,7 +787,7 @@ async function speakSelectedText() {
     const lang_code = voice[0]; // Extract language code from voice
     
     // Check if text needs chunking
-    if (selectedText.length > 500) {
+    if (selectedText.length > 400) {
       return await speakChunkedText(selectedText, voice);
     }
     
@@ -1033,6 +1051,9 @@ async function generateRemainingChunksContent(chunks, voice) {
       // Wait a bit before generating next chunk to not overwhelm the API
       await new Promise(resolve => setTimeout(resolve, 500));
       
+      console.log(`Content script: Generating chunk ${i + 2} of ${chunks.length + 1}`);
+      console.log(`Chunk text: "${chunks[i].substring(0, 100)}..."`);
+      
       const response = await fetch('http://localhost:8000/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1054,21 +1075,20 @@ async function generateRemainingChunksContent(chunks, voice) {
       if (result.success && result.audio_url) {
         const audioUrl = `http://localhost:8000${result.audio_url}`;
         
-        // Update chunk indicator
-        currentChunk = i + 2; // +2 because i starts at 0 and we already played chunk 1
-        updateChunkIndicator(currentChunk, totalChunks);
-        
-        // Highlight this chunk
-        if (highlightedRange) {
-          highlightChunk(chunks[i + 1], i + 1);
-        }
+        console.log(`Content script: Successfully generated chunk ${i + 2}`);
         
         // Queue this chunk for playback
         chrome.runtime.sendMessage({
           action: 'queueAudio',
           audioUrl: audioUrl,
-          chunkText: chunks[i + 1],
+          chunkText: chunks[i],
           chunkIndex: i + 1
+        }, (response) => {
+          if (response && response.success) {
+            console.log(`Content script: Successfully queued chunk ${i + 2}`);
+          } else {
+            console.error(`Content script: Failed to queue chunk ${i + 2}:`, response?.error);
+          }
         });
       }
       

@@ -5,6 +5,17 @@ let audioQueue = [];
 let isQueueProcessing = false;
 let currentSpeed = 1.0;
 
+// Try to get saved speed from localStorage (if available)
+try {
+  const savedSpeed = localStorage.getItem('kokoro-tts-speed');
+  if (savedSpeed) {
+    currentSpeed = parseFloat(savedSpeed);
+    console.log('Loaded saved speed from localStorage:', currentSpeed);
+  }
+} catch (e) {
+  console.log('Could not access localStorage in offscreen document');
+}
+
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Offscreen received message:', request);
@@ -252,20 +263,8 @@ function setPlaybackSpeed(speed) {
     currentAudio.playbackRate = speed;
     console.log('Applied speed to current audio at time:', currentTime);
     
-    // Some browsers might need a small nudge after speed change
-    // to prevent stuttering or repeating
-    const wasPlaying = !currentAudio.paused;
-    if (wasPlaying) {
-      currentAudio.pause();
-      setTimeout(() => {
-        if (currentAudio) {
-          currentAudio.currentTime = currentTime;
-          currentAudio.play().catch(error => {
-            console.error('Error resuming after speed change:', error);
-          });
-        }
-      }, 50);
-    }
+    // Don't pause and resume - this causes chunk repetition
+    // Just set the playback rate directly
   }
 }
 
