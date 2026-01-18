@@ -1170,28 +1170,47 @@ function highlightChunk(chunkText, chunkIndex) {
     return;
   }
   
-  // Simple test: highlight the entire range
   try {
-    console.log('Attempting to highlight...');
-    
     // Clear previous highlighting
     clearHighlighting();
     
-    // Clone the range
+    // Clone the range to work with
     const range = highlightedRange.cloneRange();
+    const contents = range.cloneContents();
     
-    // Create a simple highlight span
-    const span = document.createElement('span');
-    span.style.backgroundColor = '#FFE066';
-    span.style.color = '#000';
-    span.style.borderRadius = '2px';
-    span.style.padding = '1px 2px';
+    // Create a temporary container to work with the text
+    const container = document.createElement('div');
+    container.appendChild(contents);
+    const fullText = container.textContent || container.innerText || '';
     
-    // Surround the range
-    range.surroundContents(span);
-    highlightedSpans.push(span);
+    console.log('Full text length:', fullText.length);
     
-    console.log('Highlight applied successfully!');
+    // Find all chunks up to current one
+    const chunks = splitTextIntoChunks(fullText, 400);
+    console.log('Total chunks:', chunks.length, 'Current chunk index:', chunkIndex);
+    
+    let currentPos = 0;
+    
+    // Highlight all previous chunks in light blue
+    for (let i = 0; i < chunkIndex && i < chunks.length; i++) {
+      console.log('Highlighting processed chunk', i, ':', chunks[i].substring(0, 30) + '...');
+      const chunkStart = fullText.indexOf(chunks[i], currentPos);
+      if (chunkStart !== -1) {
+        highlightTextInRange(chunks[i], '#E3F2FD', '#000');
+        currentPos = chunkStart + chunks[i].length;
+      }
+    }
+    
+    // Highlight current chunk in yellow
+    if (chunkIndex < chunks.length) {
+      console.log('Highlighting current chunk', chunkIndex, ':', chunks[chunkIndex].substring(0, 30) + '...');
+      const chunkStart = fullText.indexOf(chunks[chunkIndex], currentPos);
+      if (chunkStart !== -1) {
+        highlightTextInRange(chunks[chunkIndex], '#FFE066', '#000');
+      }
+    }
+    
+    console.log('Highlighting complete!');
     console.log('=== END HIGHLIGHT DEBUG ===');
     
   } catch (e) {

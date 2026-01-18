@@ -82,11 +82,13 @@ async function playAudio(audioUrl, chunkText = null, chunkIndex = null) {
   try {
     // Stop any existing audio
     if (currentAudio) {
+      console.log('Stopping existing audio before playing new chunk');
       currentAudio.pause();
       currentAudio = null;
     }
     
     console.log('Offscreen playing audio:', audioUrl);
+    console.log('Chunk index:', chunkIndex);
     if (chunkText) {
       console.log('Playing chunk:', chunkText.substring(0, 50) + '...');
     }
@@ -99,6 +101,7 @@ async function playAudio(audioUrl, chunkText = null, chunkIndex = null) {
     console.log('Offscreen created audio element with URL:', audioUrl);
     console.log('Audio volume:', currentAudio.volume);
     console.log('Audio playback rate:', currentAudio.playbackRate);
+    console.log('Current speed variable:', currentSpeed);
     
     // Set up audio event listeners
     currentAudio.addEventListener('loadeddata', () => {
@@ -140,8 +143,11 @@ async function playAudio(audioUrl, chunkText = null, chunkIndex = null) {
     });
     
     currentAudio.addEventListener('ended', () => {
-      console.log('Offscreen audio ended for chunk:', chunkIndex);
+      console.log('=== AUDIO ENDED ===');
+      console.log('Chunk that ended:', chunkIndex);
       console.log('Queue length before processing:', audioQueue.length);
+      console.log('isPlaying before:', isPlaying);
+      
       isPlaying = false;
       currentAudio = null;
       
@@ -159,6 +165,8 @@ async function playAudio(audioUrl, chunkText = null, chunkIndex = null) {
         console.log('All chunks played, sending audioEnded');
         chrome.runtime.sendMessage({ action: 'audioEnded' });
       }
+      
+      console.log('=== END AUDIO ENDED ===');
     });
     
     currentAudio.addEventListener('pause', () => {
@@ -263,9 +271,18 @@ function setPlaybackSpeed(speed) {
   
   // Apply to current audio if playing
   if (currentAudio && isPlaying) {
-    // Apply new speed directly without seeking
-    currentAudio.playbackRate = speed;
-    console.log('Applied speed to current audio, new rate:', currentAudio.playbackRate);
+    // Store the current playback state
+    const wasPlaying = !currentAudio.paused;
+    const currentTime = currentAudio.currentTime;
+    
+    // Only change speed if it's different
+    if (Math.abs(currentAudio.playbackRate - speed) > 0.01) {
+      console.log('Changing speed from', currentAudio.playbackRate, 'to', speed);
+      currentAudio.playbackRate = speed;
+      
+      // Don't pause or seek - just change the rate
+      console.log('Speed changed successfully');
+    }
   }
 }
 
