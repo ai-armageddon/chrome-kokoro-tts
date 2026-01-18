@@ -41,8 +41,8 @@ document.addEventListener('DOMContentLoaded', () => {
     speedValue.textContent = newSpeed + 'x';
     updateResetSpeedButton(newSpeed);
     
-    // Save speed to localStorage
-    localStorage.setItem('kokoro-tts-speed', newSpeed.toString());
+    // Save speed to chrome.storage.local (accessible by background script)
+    chrome.storage.local.set({ 'kokoro-tts-speed': newSpeed });
     
     // Apply speed change immediately to current audio
     chrome.runtime.sendMessage({ action: 'setSpeed', speed: newSpeed }, (response) => {
@@ -55,17 +55,18 @@ document.addEventListener('DOMContentLoaded', () => {
   // Highlight toggle event listener
   const highlightToggle = document.getElementById('highlightToggle');
   
-  // Load saved highlight setting
-  const savedHighlight = localStorage.getItem('kokoro-tts-highlight');
-  if (savedHighlight !== null) {
-    highlightToggle.checked = savedHighlight === 'true';
-  } else {
-    highlightToggle.checked = true; // Default to enabled
-  }
+  // Load saved highlight setting from chrome.storage.local
+  chrome.storage.local.get(['kokoro-tts-highlight'], (result) => {
+    if (result['kokoro-tts-highlight'] !== undefined) {
+      highlightToggle.checked = result['kokoro-tts-highlight'];
+    } else {
+      highlightToggle.checked = true; // Default to enabled
+    }
+  });
   
   highlightToggle.addEventListener('change', (e) => {
     const isEnabled = e.target.checked;
-    localStorage.setItem('kokoro-tts-highlight', isEnabled.toString());
+    chrome.storage.local.set({ 'kokoro-tts-highlight': isEnabled });
     
     // Send highlight setting to content scripts
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -80,23 +81,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   
-  // Get current speed when popup opens
-  chrome.runtime.sendMessage({ action: 'getSpeed' }, (response) => {
+  // Get current speed when popup opens - use chrome.storage.local
+  chrome.storage.local.get(['kokoro-tts-speed'], (result) => {
     let speed = 1.0; // Default speed
     
-    // Try to get saved speed from localStorage first
-    const savedSpeed = localStorage.getItem('kokoro-tts-speed');
-    if (savedSpeed) {
-      speed = parseFloat(savedSpeed);
-    } else if (response && response.speed !== undefined) {
-      speed = response.speed;
+    if (result['kokoro-tts-speed'] !== undefined) {
+      speed = parseFloat(result['kokoro-tts-speed']);
     }
     
     speedSlider.value = speed;
     speedValue.textContent = speed + 'x';
     updateResetSpeedButton(speed);
     
-    // Apply the saved speed
+    // Sync speed to background/offscreen (in case they haven't loaded it yet)
     chrome.runtime.sendMessage({ action: 'setSpeed', speed: speed });
     
     // Send current highlight setting to content script
@@ -296,6 +293,9 @@ function resetSpeed() {
   speedSlider.value = 1.0;
   speedValue.textContent = '1.0x';
   updateResetSpeedButton(1.0);
+  
+  // Save to storage
+  chrome.storage.local.set({ 'kokoro-tts-speed': 1.0 });
   
   // Apply speed change immediately
   chrome.runtime.sendMessage({ action: 'setSpeed', speed: 1.0 }, (response) => {

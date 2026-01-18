@@ -177,20 +177,23 @@ async function playAudio(audioUrl, chunkText = null, chunkIndex = null) {
       isPlaying = false;
       currentAudio = null;
       
-      // Check if there are more items in queue
-      const hasMoreItems = audioQueue.length > 0;
-      
-      // Process next item in queue if available
-      if (hasMoreItems) {
-        console.log('Processing next item in queue...');
-        processNextInQueue();
-      }
-      
-      // Only notify audio ended if queue is empty (all chunks played)
-      if (!hasMoreItems) {
-        console.log('All chunks played, sending audioEnded');
-        chrome.runtime.sendMessage({ action: 'audioEnded' });
-      }
+      // Use setTimeout to ensure we don't have race conditions with queueAudio
+      setTimeout(() => {
+        // Check if there are more items in queue
+        const hasMoreItems = audioQueue.length > 0;
+        
+        // Process next item in queue if available and not already processing
+        if (hasMoreItems && !isQueueProcessing && !isPlaying) {
+          console.log('Processing next item in queue...');
+          processNextInQueue();
+        }
+        
+        // Only notify audio ended if queue is empty (all chunks played)
+        if (!hasMoreItems && !isPlaying) {
+          console.log('All chunks played, sending audioEnded');
+          chrome.runtime.sendMessage({ action: 'audioEnded' });
+        }
+      }, 50);
       
       console.log('=== END AUDIO ENDED ===');
     });
@@ -265,10 +268,10 @@ function queueAudio(audioUrl, chunkText = null, chunkIndex = null) {
   }
   audioQueue.push({ url: audioUrl, text: chunkText, index: chunkIndex });
   
-  // Start processing queue if not already playing
-  if (!isPlaying && !isQueueProcessing) {
-    processNextInQueue();
-  }
+  // Don't auto-start here - let the ended event handle queue processing
+  // This prevents race conditions where both queueAudio and ended event
+  // try to process the next item simultaneously
+  console.log('Audio queued, queue length:', audioQueue.length);
 }
 
 // Process next audio in queue

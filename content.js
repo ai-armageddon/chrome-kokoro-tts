@@ -518,6 +518,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   
   if (request.action === 'audioStarted') {
     console.log('Audio started notification received for chunk:', request.chunkIndex);
+    isPlaying = true;
     
     // Update chunk indicator
     if (totalChunks > 1) {
@@ -532,6 +533,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         console.error('Error highlighting chunk:', e);
       }
     }
+    
+    // Hide play button and show audio controls
+    if (playButton) {
+      playButton.style.display = 'none';
+    }
+    showAudioControls(false); // Show pause button
   }
   
   if (request.action === 'chunkUpdate') {
@@ -544,22 +551,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.chunkText) {
       highlightChunk(request.chunkText, currentChunk - 1);
     }
-  }
-  
-  if (request.action === 'audioStarted') {
-    console.log('Audio started notification received');
-    isPlaying = true;
-    
-    // Highlight the chunk if provided
-    if (request.chunkText && request.chunkIndex !== undefined) {
-      highlightChunk(request.chunkText, request.chunkIndex);
-    }
-    
-    // Hide play button and show audio controls
-    if (playButton) {
-      playButton.style.display = 'none';
-    }
-    showAudioControls(false); // Show pause button
   }
   
   if (request.action === 'audioPaused') {
@@ -1144,12 +1135,15 @@ async function generateRemainingChunksContent(chunks, voice) {
 
 // Clear all highlighting
 function clearHighlighting() {
-  // Remove highlight styles from all spans
+  // Unwrap all highlight spans back to text nodes
   highlightedSpans.forEach(span => {
     if (span && span.parentNode) {
-      span.style.backgroundColor = '';
-      span.style.color = '';
-      span.style.transition = '';
+      const parent = span.parentNode;
+      const textNode = document.createTextNode(span.textContent);
+      parent.replaceChild(textNode, span);
+      
+      // Normalize to merge adjacent text nodes
+      parent.normalize();
     }
   });
   highlightedSpans = [];
@@ -1242,80 +1236,114 @@ function highlightTextInRange(textToHighlight, bgColor, textColor) {
   const fullText = container.textContent || container.innerText || '';
   
   const chunkStart = fullText.indexOf(textToHighlight);
-  if (chunkStart === -1) return;
+  if (chunkStart === -1) {
+    console.log('Could not find chunk text in range');
+    return;
+  }
   
   const chunkEnd = chunkStart + textToHighlight.length;
   
-  // Create a tree walker to find text nodes
+  // Collect all text nodes within the range
+  const textNodes = [];
   const walker = document.createTreeWalker(
-    range.commonAncestorContainer,
+    range.commonAncestorContainer.nodeType === Node.TEXT_NODE 
+      ? range.commonAncestorContainer.parentNode 
+      : range.commonAncestorContainer,
     NodeFilter.SHOW_TEXT,
     {
       acceptNode: function(node) {
-        return range.intersectsNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+        // Check if this node is within our original selection
+        const nodeRange = document.createRange();
+        nodeRange.selectNodeContents(node);
+        return range.compareBoundaryPoints(Range.START_TO_END, nodeRange) > 0 &&
+               range.compareBoundaryPoints(Range.END_TO_START, nodeRange) < 0
+          ? NodeFilter.FILTER_ACCEPT 
+          : NodeFilter.FILTER_REJECT;
       }
     }
   );
   
-  let currentPos = 0;
-  let startNode = null;
-  let startOffset = 0;
-  let endNode = null;
-  let endOffset = 0;
-  
-  // Find the start and end nodes for the chunk
   while (walker.nextNode()) {
-    const node = walker.currentNode;
+    textNodes.push(walker.currentNode);
+  }
+  
+  if (textNodes.length === 0) {
+    console.log('No text nodes found in range');
+    return;
+  }
+  
+  // Calculate positions and find which nodes to highlight
+  let currentPos = 0;
+  let firstHighlightSpan = null;
+  
+  for (const node of textNodes) {
     const nodeText = node.textContent;
     const nodeLength = nodeText.length;
+    const nodeStart = currentPos;
+    const nodeEnd = currentPos + nodeLength;
     
-    // Check if chunk starts in this node
-    if (!startNode && currentPos + nodeLength >= chunkStart) {
-      startNode = node;
-      startOffset = chunkStart - currentPos;
-    }
-    
-    // Check if chunk ends in this node
-    if (currentPos + nodeLength >= chunkEnd) {
-      endNode = node;
-      endOffset = chunkEnd - currentPos;
-      break;
+    // Check if this node overlaps with our chunk
+    if (nodeEnd > chunkStart && nodeStart < chunkEnd) {
+      // Calculate the portion of this node to highlight
+      const highlightStart = Math.max(0, chunkStart - nodeStart);
+      const highlightEnd = Math.min(nodeLength, chunkEnd - nodeStart);
+      
+      if (highlightStart < highlightEnd) {
+        try {
+          // Split the text node if needed and wrap the highlighted portion
+          const highlightedText = nodeText.substring(highlightStart, highlightEnd);
+          
+          // Create the highlight span
+          const span = document.createElement('span');
+          span.textContent = highlightedText;
+          span.style.backgroundColor = bgColor;
+          span.style.color = textColor;
+          span.style.transition = 'background-color 0.3s ease';
+          span.style.borderRadius = '2px';
+          span.style.padding = '1px 0';
+          span.setAttribute('data-highlight', 'true');
+          span.setAttribute('data-chunk', textToHighlight.substring(0, 20));
+          
+          // Replace the portion of the text node
+          const beforeText = nodeText.substring(0, highlightStart);
+          const afterText = nodeText.substring(highlightEnd);
+          
+          const parent = node.parentNode;
+          if (parent) {
+            // Insert before text if any
+            if (beforeText) {
+              parent.insertBefore(document.createTextNode(beforeText), node);
+            }
+            
+            // Insert the highlight span
+            parent.insertBefore(span, node);
+            
+            // Replace original node with after text or remove it
+            if (afterText) {
+              node.textContent = afterText;
+            } else {
+              parent.removeChild(node);
+            }
+            
+            highlightedSpans.push(span);
+            
+            if (!firstHighlightSpan) {
+              firstHighlightSpan = span;
+            }
+          }
+        } catch (e) {
+          console.error('Error highlighting text node:', e);
+        }
+      }
     }
     
     currentPos += nodeLength;
   }
   
-  // If we found the start and end, create the highlight
-  if (startNode && endNode) {
-    const highlightRange = document.createRange();
-    highlightRange.setStart(startNode, startOffset);
-    highlightRange.setEnd(endNode, endOffset);
-    
-    // Apply highlight styling
-    const span = document.createElement('span');
-    highlightRange.surroundContents(span);
-    
-    // Style the highlighted span
-    span.style.backgroundColor = bgColor;
-    span.style.color = textColor;
-    span.style.transition = 'background-color 0.3s ease';
-    span.style.borderRadius = '3px';
-    span.style.padding = '2px 1px';
-    span.style.boxShadow = '0 1px 3px rgba(0,0,0,0.2)';
-    span.style.position = 'relative';
-    
-    // Add a debug attribute
-    span.setAttribute('data-highlight', 'true');
-    span.setAttribute('data-chunk', textToHighlight.substring(0, 20));
-    
-    highlightedSpans.push(span);
-    
-    console.log('Created highlight span for:', textToHighlight.substring(0, 30) + '...');
-    console.log('Span element:', span);
-    console.log('Span background color:', span.style.backgroundColor);
-    
-    // Scroll the highlight into view if needed
-    span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // Scroll the first highlighted span into view
+  if (firstHighlightSpan) {
+    console.log('Created highlight spans for:', textToHighlight.substring(0, 30) + '...');
+    firstHighlightSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 }
 

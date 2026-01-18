@@ -2,6 +2,14 @@
 let offscreenDocumentCreated = false;
 let currentSpeed = 1.0; // Store speed in background script
 
+// Load saved speed from storage on startup
+chrome.storage.local.get(['kokoro-tts-speed'], (result) => {
+  if (result['kokoro-tts-speed'] !== undefined) {
+    currentSpeed = parseFloat(result['kokoro-tts-speed']);
+    console.log('Background: Loaded saved speed from storage:', currentSpeed);
+  }
+});
+
 // Listen for messages from popup and content scripts
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Background received message:', request);
@@ -47,11 +55,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
   
-  if (request.action === 'setSpeed' || request.action === 'getSpeed') {
-    if (request.action === 'setSpeed') {
-      currentSpeed = request.speed;
-      console.log('Background: Stored speed:', currentSpeed);
-    }
+  if (request.action === 'setSpeed') {
+    currentSpeed = request.speed;
+    // Save to storage so it persists
+    chrome.storage.local.set({ 'kokoro-tts-speed': request.speed });
+    console.log('Background: Stored speed:', currentSpeed);
     
     if (offscreenDocumentCreated) {
       sendToOffscreen(request).then((response) => {
@@ -61,12 +69,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({ success: false, error: error.message });
       });
     } else {
-      if (request.action === 'getSpeed') {
-        sendResponse({ speed: currentSpeed });
-      } else {
-        sendResponse({ success: false, error: 'No audio playing' });
-      }
+      sendResponse({ success: true });
     }
+    return true;
+  }
+  
+  if (request.action === 'getSpeed') {
+    // Always read from storage to ensure we have the latest value
+    chrome.storage.local.get(['kokoro-tts-speed'], (result) => {
+      const speed = result['kokoro-tts-speed'] !== undefined 
+        ? parseFloat(result['kokoro-tts-speed']) 
+        : currentSpeed;
+      currentSpeed = speed; // Update local cache
+      console.log('Background: getSpeed returning:', speed);
+      sendResponse({ speed: speed });
+    });
     return true;
   }
 });
