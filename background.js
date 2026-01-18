@@ -1,5 +1,6 @@
 // Background script for managing offscreen audio playback
 let offscreenDocumentCreated = false;
+let currentSpeed = 1.0; // Store speed in background script
 
 // Listen for messages from popup and content scripts
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -47,6 +48,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.action === 'setSpeed' || request.action === 'getSpeed') {
+    if (request.action === 'setSpeed') {
+      currentSpeed = request.speed;
+      console.log('Background: Stored speed:', currentSpeed);
+    }
+    
     if (offscreenDocumentCreated) {
       sendToOffscreen(request).then((response) => {
         sendResponse(response);
@@ -56,7 +62,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
     } else {
       if (request.action === 'getSpeed') {
-        sendResponse({ speed: 1.0 }); // Default speed
+        sendResponse({ speed: currentSpeed });
       } else {
         sendResponse({ success: false, error: 'No audio playing' });
       }

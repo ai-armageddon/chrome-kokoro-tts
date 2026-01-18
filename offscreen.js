@@ -5,27 +5,24 @@ let audioQueue = [];
 let isQueueProcessing = false;
 let currentSpeed = 1.0;
 
-// Try to get saved speed from localStorage (if available)
-try {
-  const savedSpeed = localStorage.getItem('kokoro-tts-speed');
-  if (savedSpeed) {
-    currentSpeed = parseFloat(savedSpeed);
-    console.log('Loaded saved speed from localStorage:', currentSpeed);
-  }
-} catch (e) {
-  console.log('Could not access localStorage in offscreen document');
-}
-
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Offscreen received message:', request);
   
   if (request.action === 'playAudio') {
-    playAudio(request.audioUrl, request.chunkText, request.chunkIndex).then(() => {
-      sendResponse({ success: true });
-    }).catch((error) => {
-      console.error('Offscreen audio play error:', error);
-      sendResponse({ success: false, error: error.message });
+    // Get current speed before playing
+    chrome.runtime.sendMessage({ action: 'getSpeed' }, (speedResponse) => {
+      if (speedResponse && speedResponse.speed !== undefined) {
+        currentSpeed = speedResponse.speed;
+        console.log('Offscreen: Got speed from background:', currentSpeed);
+      }
+      
+      playAudio(request.audioUrl, request.chunkText, request.chunkIndex).then(() => {
+        sendResponse({ success: true });
+      }).catch((error) => {
+        console.error('Offscreen audio play error:', error);
+        sendResponse({ success: false, error: error.message });
+      });
     });
     return true; // Keep message channel open for async response
   }
@@ -143,7 +140,8 @@ async function playAudio(audioUrl, chunkText = null, chunkIndex = null) {
     });
     
     currentAudio.addEventListener('ended', () => {
-      console.log('Offscreen audio ended');
+      console.log('Offscreen audio ended for chunk:', chunkIndex);
+      console.log('Queue length before processing:', audioQueue.length);
       isPlaying = false;
       currentAudio = null;
       
@@ -151,7 +149,10 @@ async function playAudio(audioUrl, chunkText = null, chunkIndex = null) {
       const hasMoreItems = audioQueue.length > 0;
       
       // Process next item in queue if available
-      processNextInQueue();
+      if (hasMoreItems) {
+        console.log('Processing next item in queue...');
+        processNextInQueue();
+      }
       
       // Only notify audio ended if queue is empty (all chunks played)
       if (!hasMoreItems) {

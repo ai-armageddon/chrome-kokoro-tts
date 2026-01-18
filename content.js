@@ -1130,10 +1130,13 @@ function clearHighlighting() {
 function highlightChunk(chunkText, chunkIndex) {
   if (!highlightedRange || !chunkText || !highlightEnabled) {
     console.log('No highlighted range or chunk text to highlight, or highlighting disabled');
+    console.log('highlightedRange:', !!highlightedRange, 'chunkText length:', chunkText ? chunkText.length : 0, 'highlightEnabled:', highlightEnabled);
     return;
   }
   
   try {
+    console.log('Highlighting chunk', chunkIndex, ':', chunkText.substring(0, 50) + '...');
+    
     // Clone the range to work with
     const range = highlightedRange.cloneRange();
     const contents = range.cloneContents();
@@ -1143,18 +1146,21 @@ function highlightChunk(chunkText, chunkIndex) {
     container.appendChild(contents);
     const fullText = container.textContent || container.innerText || '';
     
+    console.log('Full text length:', fullText.length);
+    
     // Find all chunks up to current one
     const chunks = splitTextIntoChunks(fullText, 400);
-    let processedText = '';
+    console.log('Total chunks:', chunks.length, 'Current chunk index:', chunkIndex);
     
     // Highlight all previous chunks in light blue
     for (let i = 0; i < chunkIndex && i < chunks.length; i++) {
-      processedText += chunks[i];
+      console.log('Highlighting processed chunk', i, ':', chunks[i].substring(0, 30) + '...');
       highlightTextInRange(chunks[i], '#E3F2FD', '#000'); // Light blue for processed
     }
     
     // Highlight current chunk in yellow
     if (chunkIndex < chunks.length) {
+      console.log('Highlighting current chunk', chunkIndex, ':', chunks[chunkIndex].substring(0, 30) + '...');
       highlightTextInRange(chunks[chunkIndex], '#FFE066', '#000'); // Yellow for current
     }
     
