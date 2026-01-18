@@ -52,6 +52,34 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   
+  // Highlight toggle event listener
+  const highlightToggle = document.getElementById('highlightToggle');
+  
+  // Load saved highlight setting
+  const savedHighlight = localStorage.getItem('kokoro-tts-highlight');
+  if (savedHighlight !== null) {
+    highlightToggle.checked = savedHighlight === 'true';
+  } else {
+    highlightToggle.checked = true; // Default to enabled
+  }
+  
+  highlightToggle.addEventListener('change', (e) => {
+    const isEnabled = e.target.checked;
+    localStorage.setItem('kokoro-tts-highlight', isEnabled.toString());
+    
+    // Send highlight setting to content scripts
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        chrome.tabs.sendMessage(tabs[0].id, {
+          action: 'setHighlightEnabled',
+          enabled: isEnabled
+        }).catch(() => {
+          // Ignore if content script not ready
+        });
+      }
+    });
+  });
+  
   // Get current speed when popup opens
   chrome.runtime.sendMessage({ action: 'getSpeed' }, (response) => {
     let speed = 1.0; // Default speed

@@ -147,11 +147,17 @@ async function playAudio(audioUrl, chunkText = null, chunkIndex = null) {
       isPlaying = false;
       currentAudio = null;
       
+      // Check if there are more items in queue
+      const hasMoreItems = audioQueue.length > 0;
+      
       // Process next item in queue if available
       processNextInQueue();
       
-      // Notify background script that audio ended
-      chrome.runtime.sendMessage({ action: 'audioEnded' });
+      // Only notify audio ended if queue is empty (all chunks played)
+      if (!hasMoreItems) {
+        console.log('All chunks played, sending audioEnded');
+        chrome.runtime.sendMessage({ action: 'audioEnded' });
+      }
     });
     
     currentAudio.addEventListener('pause', () => {

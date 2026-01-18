@@ -2,16 +2,16 @@
 
 let playButton = null;
 let pauseButton = null;
-let stopButton = null;
-let chunkIndicator = null;
 let audioControls = null;
+let chunkIndicator = null;
 let isPlaying = false;
 let currentChunk = 0;
 let totalChunks = 0;
-let highlightedRange = null;
 let highlightedSpans = [];
+let highlightedRange = null;
 let lastSelectedText = '';
 let lastSelectedRange = null;
+let highlightEnabled = true; // Default to enabled
 
 // Create play button element
 function createPlayButton() {
@@ -365,7 +365,19 @@ document.addEventListener('mouseup', (e) => {
     if (selectedText && selectedText.length > 0 && !isPlaying) {
       lastSelectedText = selectedText;
       try {
-        lastSelectedRange = selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : null;
+        // Clone the range immediately to preserve it
+        if (selection.rangeCount > 0) {
+          lastSelectedRange = selection.getRangeAt(0).cloneRange();
+          
+          // Store the text content in a more robust way
+          const range = selection.getRangeAt(0);
+          const contents = range.cloneContents();
+          const tempDiv = document.createElement('div');
+          tempDiv.appendChild(contents);
+          lastSelectedText = tempDiv.textContent || tempDiv.innerText || selectedText;
+        } else {
+          lastSelectedRange = null;
+        }
       } catch (e) {
         console.error('Error caching selection range:', e);
         lastSelectedRange = null;
@@ -494,6 +506,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
   }
   
+  if (request.action === 'setHighlightEnabled') {
+    highlightEnabled = request.enabled;
+    console.log('Highlight enabled:', highlightEnabled);
+    
+    // Clear highlighting if disabled
+    if (!highlightEnabled) {
+      clearHighlighting();
+    }
+  }
+  
   if (request.action === 'audioStarted') {
     console.log('Audio started notification received for chunk:', request.chunkIndex);
     
@@ -503,7 +525,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     
     // Highlight the current chunk
-    if (highlightedRange && request.chunkText) {
+    if (highlightedRange && request.chunkText && highlightEnabled) {
       try {
         highlightChunk(request.chunkText, request.chunkIndex || 0);
       } catch (e) {
@@ -595,25 +617,16 @@ function pauseAudio() {
 
 // Generate speech from selected text (same as popup)
 async function generateSpeechFromSelectedText() {
-  const selection = window.getSelection();
-  const selectedText = selection.toString().trim();
+  // Use cached text instead of current selection
+  const selectedText = lastSelectedText;
   
   if (!selectedText) {
     console.log('No selected text to speak');
     return;
   }
   
-  // Save the selection range for highlighting
-  if (selection.rangeCount > 0 && selection.getRangeAt(0)) {
-    try {
-      highlightedRange = selection.getRangeAt(0).cloneRange();
-    } catch (e) {
-      console.error('Error cloning range:', e);
-      highlightedRange = null;
-    }
-  } else {
-    highlightedRange = null;
-  }
+  // Use the cached range for highlighting
+  highlightedRange = lastSelectedRange;
   
   console.log('Starting TTS for:', selectedText);
   
@@ -1110,21 +1123,17 @@ function clearHighlighting() {
   });
   highlightedSpans = [];
   
-  // Clear the saved range
-  highlightedRange = null;
+  // Don't clear the saved range - keep it for chunking
 }
 
-// Highlight specific chunk of text
+// Highlight specific chunk of text with two-color system
 function highlightChunk(chunkText, chunkIndex) {
-  if (!highlightedRange || !chunkText) {
-    console.log('No highlighted range or chunk text to highlight');
+  if (!highlightedRange || !chunkText || !highlightEnabled) {
+    console.log('No highlighted range or chunk text to highlight, or highlighting disabled');
     return;
   }
   
   try {
-    // Clear previous highlighting
-    clearHighlighting();
-    
     // Clone the range to work with
     const range = highlightedRange.cloneRange();
     const contents = range.cloneContents();
@@ -1134,78 +1143,102 @@ function highlightChunk(chunkText, chunkIndex) {
     container.appendChild(contents);
     const fullText = container.textContent || container.innerText || '';
     
-    // Find the chunk position in the full text
-    const chunkStart = fullText.indexOf(chunkText);
-    if (chunkStart === -1) {
-      console.log('Chunk text not found in selection');
-      return;
-    }
-  
-  const chunkEnd = chunkStart + chunkText.length;
+    // Find all chunks up to current one
+    const chunks = splitTextIntoChunks(fullText, 400);
+    let processedText = '';
     
-    // Create a tree walker to find text nodes
-    const walker = document.createTreeWalker(
-      range.commonAncestorContainer,
-      NodeFilter.SHOW_TEXT,
-      {
-        acceptNode: function(node) {
-          return range.intersectsNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
-        }
-      }
-    );
-    
-    let currentPos = 0;
-    let startNode = null;
-    let startOffset = 0;
-    let endNode = null;
-    let endOffset = 0;
-    
-    // Find the start and end nodes for the chunk
-    while (walker.nextNode()) {
-      const node = walker.currentNode;
-      const nodeText = node.textContent;
-      const nodeLength = nodeText.length;
-      
-      // Check if chunk starts in this node
-      if (!startNode && currentPos + nodeLength >= chunkStart) {
-        startNode = node;
-        startOffset = chunkStart - currentPos;
-      }
-      
-      // Check if chunk ends in this node
-      if (currentPos + nodeLength >= chunkEnd) {
-        endNode = node;
-        endOffset = chunkEnd - currentPos;
-        break;
-      }
-      
-      currentPos += nodeLength;
+    // Highlight all previous chunks in light blue
+    for (let i = 0; i < chunkIndex && i < chunks.length; i++) {
+      processedText += chunks[i];
+      highlightTextInRange(chunks[i], '#E3F2FD', '#000'); // Light blue for processed
     }
     
-    // If we found the start and end, create the highlight
-    if (startNode && endNode) {
-      const highlightRange = document.createRange();
-      highlightRange.setStart(startNode, startOffset);
-      highlightRange.setEnd(endNode, endOffset);
-      
-      // Apply highlight styling
-      const span = document.createElement('span');
-      highlightRange.surroundContents(span);
-      
-      // Style the highlighted span
-      span.style.backgroundColor = '#FFE066';
-      span.style.color = '#000';
-      span.style.transition = 'background-color 0.3s ease';
-      span.style.borderRadius = '2px';
-      span.style.boxShadow = '0 1px 3px rgba(0,0,0,0.2)';
-      
-      highlightedSpans.push(span);
-      
-      // Scroll the highlight into view if needed
-      span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // Highlight current chunk in yellow
+    if (chunkIndex < chunks.length) {
+      highlightTextInRange(chunks[chunkIndex], '#FFE066', '#000'); // Yellow for current
     }
+    
   } catch (e) {
     console.error('Error highlighting text:', e);
+  }
+}
+
+// Helper function to highlight specific text within the range
+function highlightTextInRange(textToHighlight, bgColor, textColor) {
+  if (!textToHighlight) return;
+  
+  const range = highlightedRange.cloneRange();
+  const contents = range.cloneContents();
+  
+  const container = document.createElement('div');
+  container.appendChild(contents);
+  const fullText = container.textContent || container.innerText || '';
+  
+  const chunkStart = fullText.indexOf(textToHighlight);
+  if (chunkStart === -1) return;
+  
+  const chunkEnd = chunkStart + textToHighlight.length;
+  
+  // Create a tree walker to find text nodes
+  const walker = document.createTreeWalker(
+    range.commonAncestorContainer,
+    NodeFilter.SHOW_TEXT,
+    {
+      acceptNode: function(node) {
+        return range.intersectsNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      }
+    }
+  );
+  
+  let currentPos = 0;
+  let startNode = null;
+  let startOffset = 0;
+  let endNode = null;
+  let endOffset = 0;
+  
+  // Find the start and end nodes for the chunk
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const nodeText = node.textContent;
+    const nodeLength = nodeText.length;
+    
+    // Check if chunk starts in this node
+    if (!startNode && currentPos + nodeLength >= chunkStart) {
+      startNode = node;
+      startOffset = chunkStart - currentPos;
+    }
+    
+    // Check if chunk ends in this node
+    if (currentPos + nodeLength >= chunkEnd) {
+      endNode = node;
+      endOffset = chunkEnd - currentPos;
+      break;
+    }
+    
+    currentPos += nodeLength;
+  }
+  
+  // If we found the start and end, create the highlight
+  if (startNode && endNode) {
+    const highlightRange = document.createRange();
+    highlightRange.setStart(startNode, startOffset);
+    highlightRange.setEnd(endNode, endOffset);
+    
+    // Apply highlight styling
+    const span = document.createElement('span');
+    highlightRange.surroundContents(span);
+    
+    // Style the highlighted span
+    span.style.backgroundColor = bgColor;
+    span.style.color = textColor;
+    span.style.transition = 'background-color 0.3s ease';
+    span.style.borderRadius = '2px';
+    span.style.boxShadow = '0 1px 3px rgba(0,0,0,0.2)';
+    
+    highlightedSpans.push(span);
+    
+    // Scroll the highlight into view if needed
+    span.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 }
 
