@@ -8,6 +8,10 @@ let audioControls = null;
 let isPlaying = false;
 let currentChunk = 0;
 let totalChunks = 0;
+let highlightedRange = null;
+let highlightedSpans = [];
+let lastSelectedText = '';
+let lastSelectedRange = null;
 
 // Create play button element
 function createPlayButton() {
@@ -50,7 +54,14 @@ function createPlayButton() {
     e.stopPropagation();
     e.stopImmediatePropagation();
     console.log('Play button clicked!');
-    speakSelectedText();
+    
+    // Hide the button immediately
+    if (playButton) {
+      playButton.style.display = 'none';
+    }
+    
+    // Call the same function that the popup uses, with cached selection
+    generateSpeechFromSelectedText(lastSelectedText, lastSelectedRange);
   });
   
   return button;
@@ -352,6 +363,13 @@ document.addEventListener('mouseup', (e) => {
     
     // Show play button if text is selected and not currently playing
     if (selectedText && selectedText.length > 0 && !isPlaying) {
+      lastSelectedText = selectedText;
+      try {
+        lastSelectedRange = selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : null;
+      } catch (e) {
+        console.error('Error caching selection range:', e);
+        lastSelectedRange = null;
+      }
       console.log('Conditions met, creating play button');
       if (!playButton) {
         playButton = createPlayButton();
@@ -381,6 +399,8 @@ document.addEventListener('mouseup', (e) => {
       console.log('Play button positioned at:', rect.right, rect.top);
       console.log('Play button display:', playButton.style.display);
     } else {
+      lastSelectedText = '';
+      lastSelectedRange = null;
       console.log('Conditions not met:', {
         hasText: !!selectedText,
         textLength: selectedText ? selectedText.length : 0,
@@ -401,16 +421,19 @@ document.addEventListener('click', (e) => {
     return;
   }
   
-  // Hide play button, chunk indicator, and audio controls
-  if (playButton) {
-    playButton.style.display = 'none';
-  }
-  if (chunkIndicator) {
-    chunkIndicator.style.display = 'none';
-  }
-  if (audioControls) {
-    audioControls.style.display = 'none';
-  }
+  // Small delay to allow button click to process
+  setTimeout(() => {
+    // Hide play button, chunk indicator, and audio controls
+    if (playButton) {
+      playButton.style.display = 'none';
+    }
+    if (chunkIndicator) {
+      chunkIndicator.style.display = 'none';
+    }
+    if (audioControls) {
+      audioControls.style.display = 'none';
+    }
+  }, 10);
 });
 
 // Hide button when scrolling
@@ -447,6 +470,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     currentChunk = 0;
     totalChunks = 0;
     
+    // Clear highlighting
+    clearHighlighting();
+    
     // Hide pause button
     if (pauseButton) {
       pauseButton.style.display = 'none';
@@ -473,11 +499,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     currentChunk = request.currentChunk;
     totalChunks = request.totalChunks;
     updateChunkIndicator(currentChunk, totalChunks);
+    
+    // Update highlighting for current chunk
+    if (request.chunkText) {
+      highlightChunk(request.chunkText, currentChunk - 1);
+    }
   }
   
   if (request.action === 'audioStarted') {
     console.log('Audio started notification received');
     isPlaying = true;
+    
+    // Highlight the chunk if provided
+    if (request.chunkText && request.chunkIndex !== undefined) {
+      highlightChunk(request.chunkText, request.chunkIndex);
+    }
     
     // Hide play button and show audio controls
     if (playButton) {
@@ -539,13 +575,183 @@ function pauseAudio() {
   }
 }
 
-// Speak the selected text - handles TTS directly without popup
-async function speakSelectedText() {
-  const selectedText = window.getSelection().toString().trim();
+// Generate speech from selected text (same as popup)
+async function generateSpeechFromSelectedText() {
+  const selection = window.getSelection();
+  const selectedText = selection.toString().trim();
   
   if (!selectedText) {
     console.log('No selected text to speak');
     return;
+  }
+  
+  // Save the selection range for highlighting
+  if (selection.rangeCount > 0 && selection.getRangeAt(0)) {
+    try {
+      highlightedRange = selection.getRangeAt(0).cloneRange();
+    } catch (e) {
+      console.error('Error cloning range:', e);
+      highlightedRange = null;
+    }
+  } else {
+    highlightedRange = null;
+  }
+  
+  console.log('Starting TTS for:', selectedText);
+  
+  try {
+    // Show loading state
+    if (playButton) {
+      playButton.innerHTML = '...';
+      playButton.style.cursor = 'wait';
+      playButton.style.background = '#ffc107';
+      playButton.style.boxShadow = '0 4px 12px rgba(255,193,7,0.4)';
+      playButton.style.display = 'flex';
+    }
+    
+    const voice = 'af_heart';
+    const lang_code = voice[0]; // Extract language code from voice
+    
+    // Check if text needs chunking
+    if (selectedText.length > 500) {
+      return await speakChunkedText(selectedText, voice);
+    }
+    
+    console.log('Sending TTS request:', { text: selectedText, voice, lang_code });
+    
+    const response = await fetch('http://localhost:8000/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: selectedText,
+        voice: voice,
+        speed: 1.0, // Always generate at 1x speed
+        lang_code: lang_code,
+        return_phonemes: false
+      })
+    });
+    
+    console.log('TTS response status:', response.status);
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('API error:', errorData);
+      throw new Error('API error: ' + response.status);
+    }
+    
+    const result = await response.json();
+    console.log('TTS result:', result);
+    
+    if (result.success && result.audio_url) {
+      // Show chunk indicator for single chunk
+      updateChunkIndicator(1, 1);
+      
+      // Highlight the entire text for single chunk
+      try {
+        if (highlightedRange) {
+          highlightChunk(selectedText, 0);
+        }
+      } catch (e) {
+        console.error('Error highlighting text:', e);
+        // Continue without highlighting if it fails
+      }
+      
+      const audioUrl = `http://localhost:8000${result.audio_url}`;
+      console.log('Sending audio to background for playback:', audioUrl);
+      
+      // Send audio URL to background script for persistent playback
+      chrome.runtime.sendMessage({
+        action: 'playAudio',
+        audioUrl: audioUrl
+      }, (response) => {
+        if (response && response.success) {
+          isPlaying = true;
+          
+          // Hide play button and show audio controls
+          if (playButton) {
+            playButton.style.display = 'none';
+          }
+          showAudioControls(false); // Show pause button
+          
+          // Show pause button in top-right corner
+          if (!pauseButton) {
+            pauseButton = createPauseButton();
+            document.body.appendChild(pauseButton);
+          }
+          pauseButton.style.display = 'flex';
+        } else {
+          console.error('Background audio error:', response?.error);
+          showError('Audio play failed');
+          
+          // Reset play button on error
+          if (playButton) {
+            playButton.innerHTML = '▶';
+            playButton.style.cursor = 'pointer';
+            playButton.style.background = '#007bff';
+            playButton.style.boxShadow = '0 4px 12px rgba(0,123,255,0.4)';
+          }
+          hideChunkIndicator();
+        }
+      });
+      
+    } else {
+      throw new Error('Failed to generate speech');
+    }
+    
+  } catch (error) {
+    console.error('TTS Error:', error);
+    showError(error.message);
+    hideChunkIndicator();
+  }
+}
+
+// Show error state
+function showError(message) {
+  console.log('Showing error:', message);
+  if (playButton) {
+    playButton.innerHTML = 'X';
+    playButton.style.cursor = 'pointer';
+    playButton.style.background = '#dc3545';
+    playButton.style.boxShadow = '0 4px 12px rgba(220,53,69,0.4)';
+    
+    setTimeout(() => {
+      if (playButton) {
+        playButton.innerHTML = '▶';
+        playButton.style.cursor = 'pointer';
+        playButton.style.background = '#007bff';
+        playButton.style.boxShadow = '0 4px 12px rgba(0,123,255,0.4)';
+      }
+    }, 3000);
+  }
+}
+
+// Hide chunk indicator
+function hideChunkIndicator() {
+  if (chunkIndicator) {
+    chunkIndicator.style.display = 'none';
+  }
+}
+
+// Speak the selected text - handles TTS directly without popup
+async function speakSelectedText() {
+  const selection = window.getSelection();
+  const selectedText = selection.toString().trim();
+  
+  if (!selectedText) {
+    console.log('No selected text to speak');
+    return;
+  }
+  
+  // Save the selection range for highlighting
+  if (selection.rangeCount > 0 && selection.getRangeAt(0)) {
+    try {
+      highlightedRange = selection.getRangeAt(0).cloneRange();
+    } catch (e) {
+      console.error('Error cloning range:', e);
+      highlightedRange = null;
+    }
+  } else {
+    highlightedRange = null;
   }
   
   console.log('Starting TTS for:', selectedText);
@@ -595,6 +801,16 @@ async function speakSelectedText() {
     if (result.success && result.audio_url) {
       // Show chunk indicator for single chunk
       updateChunkIndicator(1, 1);
+      
+      try {
+        // Highlight the entire text for single chunk
+        if (highlightedRange) {
+          highlightChunk(selectedText, 0);
+        }
+      } catch (e) {
+        console.error('Error highlighting text:', e);
+        // Continue without highlighting if it fails
+      }
       
       const audioUrl = `http://localhost:8000${result.audio_url}`;
       console.log('Sending audio to background for playback:', audioUrl);
@@ -674,6 +890,16 @@ async function speakChunkedText(text, voice) {
   currentChunk = 0;
   
   try {
+    try {
+    // Highlight the first chunk immediately
+    if (highlightedRange) {
+      highlightChunk(chunks[0], 0);
+    }
+} catch (e) {
+    console.error('Error highlighting first chunk:', e);
+    // Continue without highlighting if it fails
+}
+    
     // Generate first chunk immediately and start playing
     const firstChunkResponse = await fetch('http://localhost:8000/tts', {
       method: 'POST',
@@ -703,7 +929,9 @@ async function speakChunkedText(text, voice) {
     const firstAudioUrl = `http://localhost:8000${firstResult.audio_url}`;
     chrome.runtime.sendMessage({
       action: 'playAudio',
-      audioUrl: firstAudioUrl
+      audioUrl: firstAudioUrl,
+      chunkText: chunks[0],
+      chunkIndex: 0
     }, (response) => {
       if (response && response.success) {
         isPlaying = true;
@@ -830,16 +1058,134 @@ async function generateRemainingChunksContent(chunks, voice) {
         currentChunk = i + 2; // +2 because i starts at 0 and we already played chunk 1
         updateChunkIndicator(currentChunk, totalChunks);
         
+        // Highlight this chunk
+        if (highlightedRange) {
+          highlightChunk(chunks[i + 1], i + 1);
+        }
+        
         // Queue this chunk for playback
         chrome.runtime.sendMessage({
           action: 'queueAudio',
-          audioUrl: audioUrl
+          audioUrl: audioUrl,
+          chunkText: chunks[i + 1],
+          chunkIndex: i + 1
         });
       }
       
     } catch (error) {
       console.error(`Content script: Error generating chunk ${i + 2}:`, error);
     }
+  }
+}
+
+// Clear all highlighting
+function clearHighlighting() {
+  // Remove highlight styles from all spans
+  highlightedSpans.forEach(span => {
+    if (span && span.parentNode) {
+      span.style.backgroundColor = '';
+      span.style.color = '';
+      span.style.transition = '';
+    }
+  });
+  highlightedSpans = [];
+  
+  // Clear the saved range
+  highlightedRange = null;
+}
+
+// Highlight specific chunk of text
+function highlightChunk(chunkText, chunkIndex) {
+  if (!highlightedRange || !chunkText) {
+    console.log('No highlighted range or chunk text to highlight');
+    return;
+  }
+  
+  try {
+    // Clear previous highlighting
+    clearHighlighting();
+    
+    // Clone the range to work with
+    const range = highlightedRange.cloneRange();
+    const contents = range.cloneContents();
+    
+    // Create a temporary container to work with the text
+    const container = document.createElement('div');
+    container.appendChild(contents);
+    const fullText = container.textContent || container.innerText || '';
+    
+    // Find the chunk position in the full text
+    const chunkStart = fullText.indexOf(chunkText);
+    if (chunkStart === -1) {
+      console.log('Chunk text not found in selection');
+      return;
+    }
+  
+  const chunkEnd = chunkStart + chunkText.length;
+    
+    // Create a tree walker to find text nodes
+    const walker = document.createTreeWalker(
+      range.commonAncestorContainer,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: function(node) {
+          return range.intersectsNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+        }
+      }
+    );
+    
+    let currentPos = 0;
+    let startNode = null;
+    let startOffset = 0;
+    let endNode = null;
+    let endOffset = 0;
+    
+    // Find the start and end nodes for the chunk
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const nodeText = node.textContent;
+      const nodeLength = nodeText.length;
+      
+      // Check if chunk starts in this node
+      if (!startNode && currentPos + nodeLength >= chunkStart) {
+        startNode = node;
+        startOffset = chunkStart - currentPos;
+      }
+      
+      // Check if chunk ends in this node
+      if (currentPos + nodeLength >= chunkEnd) {
+        endNode = node;
+        endOffset = chunkEnd - currentPos;
+        break;
+      }
+      
+      currentPos += nodeLength;
+    }
+    
+    // If we found the start and end, create the highlight
+    if (startNode && endNode) {
+      const highlightRange = document.createRange();
+      highlightRange.setStart(startNode, startOffset);
+      highlightRange.setEnd(endNode, endOffset);
+      
+      // Apply highlight styling
+      const span = document.createElement('span');
+      highlightRange.surroundContents(span);
+      
+      // Style the highlighted span
+      span.style.backgroundColor = '#FFE066';
+      span.style.color = '#000';
+      span.style.transition = 'background-color 0.3s ease';
+      span.style.borderRadius = '2px';
+      span.style.boxShadow = '0 1px 3px rgba(0,0,0,0.2)';
+      
+      highlightedSpans.push(span);
+      
+      // Scroll the highlight into view if needed
+      span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  } catch (e) {
+    console.error('Error highlighting text:', e);
   }
 }
 

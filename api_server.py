@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from contextlib import asynccontextmanager
 import io
 import tempfile
 import os
@@ -19,11 +20,23 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Lifespan context manager
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info("Starting Kokoro TTS API...")
+    # Pre-initialize English pipeline
+    get_pipeline('a')
+    yield
+    # Shutdown
+    logger.info("Shutting down Kokoro TTS API...")
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Kokoro TTS API",
     description="Text-to-Speech API using Kokoro model",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Add CORS middleware
@@ -84,12 +97,6 @@ def cleanup_old_files():
     for file_id in files_to_remove:
         del temp_files[file_id]
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize pipelines on startup"""
-    logger.info("Starting Kokoro TTS API...")
-    # Pre-initialize English pipeline
-    get_pipeline('a')
 
 @app.get("/")
 async def root():
@@ -141,6 +148,9 @@ async def text_to_speech(request: TTSRequest, background_tasks: BackgroundTasks)
         # Get pipeline
         pipeline = get_pipeline(request.lang_code)
         
+        # Log the actual text being processed
+        logger.info(f"Processing TTS request: '{request.text[:100]}{'...' if len(request.text) > 100 else ''}' (length: {len(request.text)} chars)")
+        
         # Generate speech
         start_time = time.time()
         generator = pipeline(request.text, voice=request.voice, speed=request.speed)
@@ -181,6 +191,7 @@ async def text_to_speech(request: TTSRequest, background_tasks: BackgroundTasks)
         phoneme_text = " | ".join(phoneme_segments) if request.return_phonemes and phoneme_segments else None
         
         logger.info(f"Generated speech in {generation_time:.2f}s: {len(request.text)} chars, {duration:.2f}s audio")
+        logger.info(f"Successfully processed: '{request.text[:50]}{'...' if len(request.text) > 50 else ''}'")
         
         return TTSResponse(
             success=True,

@@ -10,7 +10,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Offscreen received message:', request);
   
   if (request.action === 'playAudio') {
-    playAudio(request.audioUrl).then(() => {
+    playAudio(request.audioUrl, request.chunkText, request.chunkIndex).then(() => {
       sendResponse({ success: true });
     }).catch((error) => {
       console.error('Offscreen audio play error:', error);
@@ -52,7 +52,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.action === 'queueAudio') {
-    queueAudio(request.audioUrl);
+    queueAudio(request.audioUrl, request.chunkText, request.chunkIndex);
     sendResponse({ success: true });
     return true;
   }
@@ -70,7 +70,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // Play audio from URL
-async function playAudio(audioUrl) {
+async function playAudio(audioUrl, chunkText = null, chunkIndex = null) {
   try {
     // Stop any existing audio
     if (currentAudio) {
@@ -79,10 +79,18 @@ async function playAudio(audioUrl) {
     }
     
     console.log('Offscreen playing audio:', audioUrl);
+    if (chunkText) {
+      console.log('Playing chunk:', chunkText.substring(0, 50) + '...');
+    }
     
     currentAudio = new Audio(audioUrl);
     currentAudio.playbackRate = currentSpeed; // Set current speed
+    currentAudio.volume = 1.0; // Ensure full volume
     isPlaying = true;
+    
+    console.log('Offscreen created audio element with URL:', audioUrl);
+    console.log('Audio volume:', currentAudio.volume);
+    console.log('Audio playback rate:', currentAudio.playbackRate);
     
     // Set up audio event listeners
     currentAudio.addEventListener('loadeddata', () => {
@@ -91,13 +99,36 @@ async function playAudio(audioUrl) {
     
     currentAudio.addEventListener('canplay', () => {
       console.log('Offscreen audio can play, starting playback');
-      currentAudio.play().catch(error => {
-        console.error('Offscreen audio play error:', error);
-        isPlaying = false;
-      });
+      
+      // Try to play with user interaction
+      const playPromise = currentAudio.play();
+      
+      if (playPromise !== undefined) {
+        playPromise.then(() => {
+          console.log('Offscreen audio playback started successfully');
+        }).catch(error => {
+          console.error('Offscreen audio play error:', error);
+          console.error('Autoplay prevented - may need user interaction');
+          isPlaying = false;
+          
+          // Try to play after a small delay
+          setTimeout(() => {
+            if (currentAudio) {
+              console.log('Retrying audio play...');
+              currentAudio.play().catch(e => {
+                console.error('Retry failed:', e);
+              });
+            }
+          }, 100);
+        });
+      }
       
       // Notify background script that audio started
-      chrome.runtime.sendMessage({ action: 'audioStarted' });
+      chrome.runtime.sendMessage({ 
+        action: 'audioStarted',
+        chunkText: chunkText,
+        chunkIndex: chunkIndex
+      });
     });
     
     currentAudio.addEventListener('ended', () => {
@@ -175,9 +206,12 @@ function stopAudio() {
 }
 
 // Queue audio for playback
-function queueAudio(audioUrl) {
+function queueAudio(audioUrl, chunkText = null, chunkIndex = null) {
   console.log('Queueing audio:', audioUrl);
-  audioQueue.push(audioUrl);
+  if (chunkText) {
+    console.log('Queueing chunk:', chunkText.substring(0, 50) + '...');
+  }
+  audioQueue.push({ url: audioUrl, text: chunkText, index: chunkIndex });
   
   // Start processing queue if not already playing
   if (!isPlaying && !isQueueProcessing) {
@@ -193,11 +227,11 @@ function processNextInQueue() {
   }
   
   isQueueProcessing = true;
-  const nextAudioUrl = audioQueue.shift();
-  console.log('Processing next audio in queue:', nextAudioUrl);
+  const nextItem = audioQueue.shift();
+  console.log('Processing next audio in queue:', nextItem.url);
   
   // Play the next audio
-  playAudio(nextAudioUrl).catch(error => {
+  playAudio(nextItem.url, nextItem.text, nextItem.index).catch(error => {
     console.error('Error playing queued audio:', error);
     // Continue to next item in queue even if this one fails
     setTimeout(() => processNextInQueue(), 100);
@@ -210,9 +244,28 @@ function setPlaybackSpeed(speed) {
   console.log('Setting playback speed to:', speed);
   
   // Apply to current audio if playing
-  if (currentAudio) {
+  if (currentAudio && isPlaying) {
+    // Store current time before changing speed
+    const currentTime = currentAudio.currentTime;
+    
+    // Apply new speed
     currentAudio.playbackRate = speed;
-    console.log('Applied speed to current audio');
+    console.log('Applied speed to current audio at time:', currentTime);
+    
+    // Some browsers might need a small nudge after speed change
+    // to prevent stuttering or repeating
+    const wasPlaying = !currentAudio.paused;
+    if (wasPlaying) {
+      currentAudio.pause();
+      setTimeout(() => {
+        if (currentAudio) {
+          currentAudio.currentTime = currentTime;
+          currentAudio.play().catch(error => {
+            console.error('Error resuming after speed change:', error);
+          });
+        }
+      }, 50);
+    }
   }
 }
 

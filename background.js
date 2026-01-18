@@ -86,7 +86,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Notify all content scripts that audio started
     chrome.tabs.query({}, (tabs) => {
       tabs.forEach(tab => {
-        chrome.tabs.sendMessage(tab.id, { action: 'audioStarted' }).catch(() => {
+        chrome.tabs.sendMessage(tab.id, { 
+          action: 'audioStarted',
+          chunkText: request.chunkText,
+          chunkIndex: request.chunkIndex
+        }).catch(() => {
           // Ignore errors for tabs that don't have content script
         });
       });
