@@ -98,6 +98,9 @@ async function playAudio(audioUrl, chunkText = null, chunkIndex = null) {
     currentAudio.volume = 1.0; // Ensure full volume
     isPlaying = true;
     
+    // Flag to prevent duplicate notifications
+    let audioStartedSent = false;
+    
     console.log('Offscreen created audio element with URL:', audioUrl);
     console.log('Audio volume:', currentAudio.volume);
     console.log('Audio playback rate:', currentAudio.playbackRate);
@@ -110,6 +113,17 @@ async function playAudio(audioUrl, chunkText = null, chunkIndex = null) {
     
     currentAudio.addEventListener('canplay', () => {
       console.log('Offscreen audio can play, starting playback');
+      
+      // Send audioStarted notification only once
+      if (!audioStartedSent) {
+        audioStartedSent = true;
+        chrome.runtime.sendMessage({ 
+          action: 'audioStarted',
+          chunkText: chunkText,
+          chunkIndex: chunkIndex
+        });
+        console.log('Sent audioStarted notification for chunk:', chunkIndex);
+      }
       
       // Try to play with user interaction
       const playPromise = currentAudio.play();
@@ -133,13 +147,6 @@ async function playAudio(audioUrl, chunkText = null, chunkIndex = null) {
           }, 100);
         });
       }
-      
-      // Notify background script that audio started
-      chrome.runtime.sendMessage({ 
-        action: 'audioStarted',
-        chunkText: chunkText,
-        chunkIndex: chunkIndex
-      });
     });
     
     currentAudio.addEventListener('ended', () => {
