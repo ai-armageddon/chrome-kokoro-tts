@@ -263,15 +263,9 @@ function setPlaybackSpeed(speed) {
   
   // Apply to current audio if playing
   if (currentAudio && isPlaying) {
-    // Store current time before changing speed
-    const currentTime = currentAudio.currentTime;
-    
-    // Apply new speed
+    // Apply new speed directly without seeking
     currentAudio.playbackRate = speed;
-    console.log('Applied speed to current audio at time:', currentTime);
-    
-    // Don't pause and resume - this causes chunk repetition
-    // Just set the playback rate directly
+    console.log('Applied speed to current audio, new rate:', currentAudio.playbackRate);
   }
 }
 

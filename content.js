@@ -1012,40 +1012,71 @@ function splitTextIntoChunks(text, maxChunkSize) {
   const chunks = [];
   let currentChunk = '';
   
-  // Split by sentences first
-  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+  // Split by sentences first - improved regex to handle quotes and parentheses
+  const sentences = text.match(/[^.!?]+[.!?]+["')\]]?\s*/g) || [text];
   
   for (const sentence of sentences) {
-    if (currentChunk.length + sentence.length <= maxChunkSize) {
-      currentChunk += sentence;
+    const cleanSentence = sentence.trim();
+    if (!cleanSentence) continue;
+    
+    if (currentChunk.length + cleanSentence.length <= maxChunkSize) {
+      currentChunk += cleanSentence;
     } else {
       if (currentChunk.trim()) {
         chunks.push(currentChunk.trim());
       }
       
-      // If single sentence is too long, split it further
-      if (sentence.length > maxChunkSize) {
-        const words = sentence.split(' ');
-        let wordChunk = '';
+      // If single sentence is too long, split it by clauses
+      if (cleanSentence.length > maxChunkSize) {
+        // Try to split by commas, semicolons, or dashes first
+        const clauses = cleanSentence.split(/[,;—-]/);
+        let clauseChunk = '';
         
-        for (const word of words) {
-          if (wordChunk.length + word.length + 1 <= maxChunkSize) {
-            wordChunk += (wordChunk ? ' ' : '') + word;
+        for (const clause of clauses) {
+          const trimmedClause = clause.trim();
+          if (!trimmedClause) continue;
+          
+          if (clauseChunk.length + trimmedClause.length + 2 <= maxChunkSize) {
+            clauseChunk += (clauseChunk ? ', ' : '') + trimmedClause;
           } else {
-            if (wordChunk.trim()) {
-              chunks.push(wordChunk.trim());
+            if (clauseChunk.trim()) {
+              chunks.push(clauseChunk.trim());
             }
-            wordChunk = word;
+            
+            // If clause is still too long, split by words
+            if (trimmedClause.length > maxChunkSize) {
+              const words = trimmedClause.split(' ');
+              let wordChunk = '';
+              
+              for (const word of words) {
+                if (wordChunk.length + word.length + 1 <= maxChunkSize) {
+                  wordChunk += (wordChunk ? ' ' : '') + word;
+                } else {
+                  if (wordChunk.trim()) {
+                    chunks.push(wordChunk.trim());
+                  }
+                  wordChunk = word;
+                }
+              }
+              
+              if (wordChunk.trim()) {
+                clauseChunk = wordChunk;
+              } else {
+                clauseChunk = '';
+              }
+            } else {
+              clauseChunk = trimmedClause;
+            }
           }
         }
         
-        if (wordChunk.trim()) {
-          currentChunk = wordChunk;
+        if (clauseChunk.trim()) {
+          currentChunk = clauseChunk;
         } else {
           currentChunk = '';
         }
       } else {
-        currentChunk = sentence;
+        currentChunk = cleanSentence;
       }
     }
   }
@@ -1128,44 +1159,44 @@ function clearHighlighting() {
 
 // Highlight specific chunk of text with two-color system
 function highlightChunk(chunkText, chunkIndex) {
+  console.log('=== HIGHLIGHT DEBUG ===');
+  console.log('highlightEnabled:', highlightEnabled);
+  console.log('highlightedRange exists:', !!highlightedRange);
+  console.log('chunkText length:', chunkText ? chunkText.length : 0);
+  console.log('chunkIndex:', chunkIndex);
+  
   if (!highlightedRange || !chunkText || !highlightEnabled) {
     console.log('No highlighted range or chunk text to highlight, or highlighting disabled');
-    console.log('highlightedRange:', !!highlightedRange, 'chunkText length:', chunkText ? chunkText.length : 0, 'highlightEnabled:', highlightEnabled);
     return;
   }
   
+  // Simple test: highlight the entire range
   try {
-    console.log('Highlighting chunk', chunkIndex, ':', chunkText.substring(0, 50) + '...');
+    console.log('Attempting to highlight...');
     
-    // Clone the range to work with
+    // Clear previous highlighting
+    clearHighlighting();
+    
+    // Clone the range
     const range = highlightedRange.cloneRange();
-    const contents = range.cloneContents();
     
-    // Create a temporary container to work with the text
-    const container = document.createElement('div');
-    container.appendChild(contents);
-    const fullText = container.textContent || container.innerText || '';
+    // Create a simple highlight span
+    const span = document.createElement('span');
+    span.style.backgroundColor = '#FFE066';
+    span.style.color = '#000';
+    span.style.borderRadius = '2px';
+    span.style.padding = '1px 2px';
     
-    console.log('Full text length:', fullText.length);
+    // Surround the range
+    range.surroundContents(span);
+    highlightedSpans.push(span);
     
-    // Find all chunks up to current one
-    const chunks = splitTextIntoChunks(fullText, 400);
-    console.log('Total chunks:', chunks.length, 'Current chunk index:', chunkIndex);
-    
-    // Highlight all previous chunks in light blue
-    for (let i = 0; i < chunkIndex && i < chunks.length; i++) {
-      console.log('Highlighting processed chunk', i, ':', chunks[i].substring(0, 30) + '...');
-      highlightTextInRange(chunks[i], '#E3F2FD', '#000'); // Light blue for processed
-    }
-    
-    // Highlight current chunk in yellow
-    if (chunkIndex < chunks.length) {
-      console.log('Highlighting current chunk', chunkIndex, ':', chunks[chunkIndex].substring(0, 30) + '...');
-      highlightTextInRange(chunks[chunkIndex], '#FFE066', '#000'); // Yellow for current
-    }
+    console.log('Highlight applied successfully!');
+    console.log('=== END HIGHLIGHT DEBUG ===');
     
   } catch (e) {
     console.error('Error highlighting text:', e);
+    console.log('=== END HIGHLIGHT DEBUG ===');
   }
 }
 

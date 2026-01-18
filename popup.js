@@ -98,6 +98,18 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Apply the saved speed
     chrome.runtime.sendMessage({ action: 'setSpeed', speed: speed });
+    
+    // Send current highlight setting to content script
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        chrome.tabs.sendMessage(tabs[0].id, {
+          action: 'setHighlightEnabled',
+          enabled: highlightToggle.checked
+        }).catch(() => {
+          // Ignore if content script not ready
+        });
+      }
+    });
   });
 });
 
