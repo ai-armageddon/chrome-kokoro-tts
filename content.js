@@ -100,16 +100,35 @@ kokoroStyles.textContent = `
     background: rgba(84, 105, 212, 1);
     transform: scale(1.15);
   }
-  .kokoro-aura {
-    border-radius: 6px;
-    animation: kokoro-aura-glow 3.2s ease-in-out infinite;
+  /* Registered so it can transition: every aura alpha scales with this, so
+     adding/removing .kokoro-aura fades the whole aura in/out instead of snapping */
+  @property --kokoro-aura-fade {
+    syntax: '<number>';
+    inherits: false;
+    initial-value: 0;
   }
+  .kokoro-aura {
+    --kokoro-aura-fade: 1;
+    border-radius: 8px;
+    /* Soft aurora wash behind the text, slowly drifting like northern lights */
+    background-image: linear-gradient(115deg,
+      rgb(94 234 212 / calc(var(--kokoro-aura-fade) * 14%)),
+      rgb(96 165 250 / calc(var(--kokoro-aura-fade) * 11%)),
+      rgb(147 112 219 / calc(var(--kokoro-aura-fade) * 14%))) !important;
+    background-size: 220% 100% !important;
+    transition: --kokoro-aura-fade 0.45s ease;
+    animation: kokoro-aura-glow 3.2s ease-in-out infinite, kokoro-aura-drift 6s ease-in-out infinite;
+  }
+  @keyframes kokoro-aura-drift {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+  /* Outer halo + faint inner light so the block edge never reads as a hard box */
   @keyframes kokoro-aura-glow {
-    0% { box-shadow: 0 0 0 0 rgba(94, 234, 212, 0), 0 0 0 0 rgba(147, 112, 219, 0); }
-    20% { box-shadow: 0 0 14px 2px rgba(94, 234, 212, 0.45), 0 0 30px 7px rgba(96, 165, 250, 0.18); }
-    50% { box-shadow: 0 0 16px 3px rgba(147, 112, 219, 0.45), 0 0 34px 8px rgba(52, 211, 153, 0.2); }
-    80% { box-shadow: 0 0 14px 2px rgba(96, 165, 250, 0.45), 0 0 30px 7px rgba(216, 180, 254, 0.2); }
-    100% { box-shadow: 0 0 0 0 rgba(94, 234, 212, 0), 0 0 0 0 rgba(147, 112, 219, 0); }
+    0%, 100% { box-shadow: 0 0 12px 0 rgb(94 234 212 / calc(var(--kokoro-aura-fade) * 22%)), 0 0 26px 3px rgb(147 112 219 / calc(var(--kokoro-aura-fade) * 10%)), inset 0 0 14px rgb(96 165 250 / calc(var(--kokoro-aura-fade) * 7%)); }
+    25% { box-shadow: 0 0 16px 2px rgb(94 234 212 / calc(var(--kokoro-aura-fade) * 34%)), 0 0 34px 6px rgb(96 165 250 / calc(var(--kokoro-aura-fade) * 14%)), inset 0 0 18px rgb(94 234 212 / calc(var(--kokoro-aura-fade) * 9%)); }
+    50% { box-shadow: 0 0 18px 2px rgb(147 112 219 / calc(var(--kokoro-aura-fade) * 34%)), 0 0 38px 7px rgb(52 211 153 / calc(var(--kokoro-aura-fade) * 14%)), inset 0 0 18px rgb(147 112 219 / calc(var(--kokoro-aura-fade) * 9%)); }
+    75% { box-shadow: 0 0 16px 2px rgb(96 165 250 / calc(var(--kokoro-aura-fade) * 34%)), 0 0 34px 6px rgb(216 180 254 / calc(var(--kokoro-aura-fade) * 14%)), inset 0 0 18px rgb(96 165 250 / calc(var(--kokoro-aura-fade) * 9%)); }
   }
 `;
 (document.head || document.documentElement).appendChild(kokoroStyles);
@@ -594,7 +613,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     // Reset hover play button loading state
     if (hoverPlayBtn) {
-      hoverPlayBtn.textContent = '▶';
+      hoverPlayBtn.innerHTML = KOKORO_HOVER_ICON;
     }
     
     // Hide pause button
@@ -634,7 +653,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     // Reset hover play button loading state
     if (hoverPlayBtn) {
-      hoverPlayBtn.textContent = '▶';
+      hoverPlayBtn.innerHTML = KOKORO_HOVER_ICON;
     }
     
     // Update chunk indicator
@@ -1389,12 +1408,24 @@ let hoverBlock = null;
 let auraTimer = null;
 let hoverHideTimer = null;
 
+// Speaker + play glyph for the hover button: the play triangle forms the
+// speaker cone and sound waves mark it as audio, so it can't be mistaken
+// for a video play button
+const KOKORO_HOVER_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true" style="display:block">'
+  + '<rect x="2.6" y="9.6" width="3.6" height="4.8" rx="1.1" fill="#fff"/>'
+  + '<path d="M6.2 5.2 L14.8 12 L6.2 18.8 Z" fill="#fff"/>'
+  + '<path d="M16.9 9.2a4 4 0 0 1 0 5.6" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/>'
+  + '<path d="M19.2 6.7a7.6 7.6 0 0 1 0 10.6" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/>'
+  + '</svg>';
+
 function ensureHoverPlayBtn() {
   if (hoverPlayBtn) return hoverPlayBtn;
   hoverPlayBtn = document.createElement('div');
   hoverPlayBtn.className = 'kokoro-hover-play';
   hoverPlayBtn.setAttribute('data-kokoro-ui', 'true');
-  hoverPlayBtn.textContent = '▶';
+  hoverPlayBtn.setAttribute('aria-label', 'Read aloud');
+  hoverPlayBtn.title = 'Read aloud';
+  hoverPlayBtn.innerHTML = KOKORO_HOVER_ICON;
   hoverPlayBtn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1435,7 +1466,7 @@ function setHoverBlock(block) {
 
   if (hoverButtonEnabled) {
     const btn = ensureHoverPlayBtn();
-    btn.textContent = '▶';
+    btn.innerHTML = KOKORO_HOVER_ICON;
     const rect = block.getBoundingClientRect();
     let left = rect.left + window.scrollX - 28;
     if (left < 2) left = 2;
