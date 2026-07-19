@@ -39,7 +39,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
   if (changes['kokoro-tts-aura']) {
     auraEnabled = !!changes['kokoro-tts-aura'].newValue;
-    if (!auraEnabled && hoverBlock) hoverBlock.classList.remove('kokoro-aura');
+    if (!auraEnabled) removeAuraLines(true);
   }
   if (changes['kokoro-tts-hotkey'] && changes['kokoro-tts-hotkey'].newValue) {
     readHotkey = changes['kokoro-tts-hotkey'].newValue;
@@ -95,35 +95,36 @@ kokoroStyles.textContent = `
     background: rgba(84, 105, 212, 1);
     transform: scale(1.15);
   }
-  /* Registered so it can transition: every aura alpha scales with this, so
-     adding/removing .kokoro-aura fades the whole aura in/out instead of snapping */
-  @property --kokoro-aura-fade {
-    syntax: '<number>';
-    inherits: false;
-    initial-value: 0;
+  /* The block being hovered gets an adaptive text color (set via inline
+     --kokoro-aura-fg) so text keeps contrast against the aura wash */
+  .kokoro-aura-host {
+    color: var(--kokoro-aura-fg) !important;
   }
-  .kokoro-aura {
-    --kokoro-aura-fade: 1;
-    border-radius: 8px;
-    /* Soft aurora wash behind the text, slowly drifting like northern lights */
-    background-image: linear-gradient(115deg,
-      rgb(94 234 212 / calc(var(--kokoro-aura-fade) * 14%)),
-      rgb(96 165 250 / calc(var(--kokoro-aura-fade) * 11%)),
-      rgb(147 112 219 / calc(var(--kokoro-aura-fade) * 14%))) !important;
-    background-size: 220% 100% !important;
-    transition: --kokoro-aura-fade 0.45s ease;
+  /* Per-line aura overlays: appended to <body> and sized to the text's line
+     rects, so the glow hugs the text and is never clipped by page containers */
+  .kokoro-aura-line {
+    position: absolute;
+    border-radius: 5px;
+    pointer-events: none;
+    z-index: 2147483645;
+    opacity: 0;
+    transition: opacity 0.45s ease;
+    background-image: linear-gradient(115deg, rgba(94, 234, 212, 0.16), rgba(96, 165, 250, 0.13), rgba(147, 112, 219, 0.16));
+    background-size: 220% 100%;
     animation: kokoro-aura-glow 3.2s ease-in-out infinite, kokoro-aura-drift 6s ease-in-out infinite;
+  }
+  .kokoro-aura-line.kokoro-aura-on {
+    opacity: 1;
   }
   @keyframes kokoro-aura-drift {
     0%, 100% { background-position: 0% 50%; }
     50% { background-position: 100% 50%; }
   }
-  /* Outer halo + faint inner light so the block edge never reads as a hard box */
   @keyframes kokoro-aura-glow {
-    0%, 100% { box-shadow: 0 0 12px 0 rgb(94 234 212 / calc(var(--kokoro-aura-fade) * 22%)), 0 0 26px 3px rgb(147 112 219 / calc(var(--kokoro-aura-fade) * 10%)), inset 0 0 14px rgb(96 165 250 / calc(var(--kokoro-aura-fade) * 7%)); }
-    25% { box-shadow: 0 0 16px 2px rgb(94 234 212 / calc(var(--kokoro-aura-fade) * 34%)), 0 0 34px 6px rgb(96 165 250 / calc(var(--kokoro-aura-fade) * 14%)), inset 0 0 18px rgb(94 234 212 / calc(var(--kokoro-aura-fade) * 9%)); }
-    50% { box-shadow: 0 0 18px 2px rgb(147 112 219 / calc(var(--kokoro-aura-fade) * 34%)), 0 0 38px 7px rgb(52 211 153 / calc(var(--kokoro-aura-fade) * 14%)), inset 0 0 18px rgb(147 112 219 / calc(var(--kokoro-aura-fade) * 9%)); }
-    75% { box-shadow: 0 0 16px 2px rgb(96 165 250 / calc(var(--kokoro-aura-fade) * 34%)), 0 0 34px 6px rgb(216 180 254 / calc(var(--kokoro-aura-fade) * 14%)), inset 0 0 18px rgb(96 165 250 / calc(var(--kokoro-aura-fade) * 9%)); }
+    0%, 100% { box-shadow: 0 0 10px 1px rgba(94, 234, 212, 0.25), 0 0 22px 3px rgba(147, 112, 219, 0.12); }
+    25% { box-shadow: 0 0 14px 2px rgba(94, 234, 212, 0.38), 0 0 28px 6px rgba(96, 165, 250, 0.16); }
+    50% { box-shadow: 0 0 15px 2px rgba(147, 112, 219, 0.38), 0 0 32px 7px rgba(52, 211, 153, 0.16); }
+    75% { box-shadow: 0 0 14px 2px rgba(96, 165, 250, 0.38), 0 0 28px 6px rgba(216, 180, 254, 0.16); }
   }
 `;
 (document.head || document.documentElement).appendChild(kokoroStyles);
@@ -1402,6 +1403,118 @@ let hoverPlayBtn = null;
 let hoverBlock = null;
 let auraTimer = null;
 let hoverHideTimer = null;
+let auraLines = [];
+let auraFadeTimer = null;
+let auraHost = null;
+
+// Relative luminance (WCAG) of an rgb() color, used to pick a text color
+// that keeps contrast against the page while the aura is showing
+function relativeLuminance(r, g, b) {
+  const f = (c) => {
+    c /= 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+}
+
+// Walk up the DOM to find the effective background luminance behind el
+function effectiveBackgroundLuminance(el) {
+  let node = el;
+  while (node && node.nodeType === Node.ELEMENT_NODE) {
+    const m = (getComputedStyle(node).backgroundColor || '').match(/[\d.]+/g);
+    if (m && m.length >= 4 && parseFloat(m[3]) > 0.05) {
+      return relativeLuminance(parseFloat(m[0]), parseFloat(m[1]), parseFloat(m[2]));
+    }
+    node = node.parentElement;
+  }
+  return 1; // No background found — assume a light page
+}
+
+// Range.getClientRects() returns one rect per line box, but inline elements
+// (links, spans) split a line into several rects — merge those back together
+function mergeLineRects(rectList) {
+  const rects = Array.from(rectList).filter((r) => r.width > 2 && r.height > 2);
+  rects.sort((a, b) => (a.top - b.top) || (a.left - b.left));
+  const lines = [];
+  for (const r of rects) {
+    const last = lines[lines.length - 1];
+    const overlap = last ? Math.min(last.bottom, r.bottom) - Math.max(last.top, r.top) : 0;
+    if (last && overlap > Math.min(r.height, last.bottom - last.top) * 0.5) {
+      last.left = Math.min(last.left, r.left);
+      last.top = Math.min(last.top, r.top);
+      last.right = Math.max(last.right, r.right);
+      last.bottom = Math.max(last.bottom, r.bottom);
+    } else {
+      lines.push({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
+    }
+  }
+  return lines;
+}
+
+// Paint the aura as one overlay per text line, appended to <body> so page
+// containers with overflow:hidden can never clip the glow
+function showAura(block) {
+  removeAuraLines(true);
+
+  auraHost = block;
+  const fg = effectiveBackgroundLuminance(block) < 0.5 ? '#f2f5f9' : '#14181f';
+  block.style.setProperty('--kokoro-aura-fg', fg);
+  block.classList.add('kokoro-aura-host');
+
+  const range = document.createRange();
+  range.selectNodeContents(block);
+  let lines = mergeLineRects(range.getClientRects());
+  if (lines.length === 0 || lines.length > 40) {
+    // Fallback for unusual layouts (e.g. huge <pre> blocks): single overlay
+    const r = block.getBoundingClientRect();
+    lines = [{ left: r.left, top: r.top, right: r.right, bottom: r.bottom }];
+  }
+
+  const sx = window.scrollX, sy = window.scrollY;
+  for (const line of lines) {
+    const el = document.createElement('div');
+    el.className = 'kokoro-aura-line';
+    el.setAttribute('data-kokoro-ui', 'true');
+    el.style.left = (line.left + sx - 3) + 'px';
+    el.style.top = (line.top + sy - 1) + 'px';
+    el.style.width = (line.right - line.left + 6) + 'px';
+    el.style.height = (line.bottom - line.top + 2) + 'px';
+    document.body.appendChild(el);
+    auraLines.push(el);
+  }
+
+  // Double rAF so the opacity transition plays from 0
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      auraLines.forEach((el) => el.classList.add('kokoro-aura-on'));
+    });
+  });
+}
+
+function removeAuraLines(instant) {
+  if (auraFadeTimer) {
+    clearTimeout(auraFadeTimer);
+    auraFadeTimer = null;
+  }
+  if (auraHost) {
+    auraHost.classList.remove('kokoro-aura-host');
+    auraHost.style.removeProperty('--kokoro-aura-fg');
+    auraHost = null;
+  }
+  const lines = auraLines;
+  auraLines = [];
+  if (lines.length === 0) return;
+  if (instant) {
+    lines.forEach((el) => el.remove());
+    return;
+  }
+  // Let the opacity transition fade the overlays out before removing them
+  lines.forEach((el) => el.classList.remove('kokoro-aura-on'));
+  auraFadeTimer = setTimeout(() => {
+    lines.forEach((el) => el.remove());
+    auraFadeTimer = null;
+  }, 500);
+}
 
 // Speaker + play glyph for the hover button: the play triangle forms the
 // speaker cone and sound waves mark it as audio, so it can't be mistaken
@@ -1439,10 +1552,8 @@ function clearHoverBlock() {
     clearTimeout(hoverHideTimer);
     hoverHideTimer = null;
   }
-  if (hoverBlock) {
-    hoverBlock.classList.remove('kokoro-aura');
-    hoverBlock = null;
-  }
+  removeAuraLines();
+  hoverBlock = null;
   if (hoverPlayBtn) {
     hoverPlayBtn.classList.remove('kokoro-visible');
   }
@@ -1474,9 +1585,9 @@ function setHoverBlock(block) {
     // Aura fades in after a short dwell to mark the hotkey target
     auraTimer = setTimeout(() => {
       if (hoverBlock === block) {
-        block.classList.add('kokoro-aura');
+        showAura(block);
       }
-    }, 500);
+    }, 300);
   }
 }
 
