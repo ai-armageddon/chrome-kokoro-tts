@@ -60,15 +60,10 @@ kokoroStyles.textContent = `
     background-color: rgba(102, 126, 234, 0.18) !important;
   }
   .kokoro-tts-reading {
-    background-color: rgba(255, 233, 125, 0.4) !important;
-    background-image: linear-gradient(110deg, rgba(255,255,255,0) 35%, rgba(255,255,255,0.8) 50%, rgba(255,255,255,0) 65%) !important;
-    background-size: 300% 100% !important;
-    background-repeat: no-repeat !important;
-    animation: kokoro-tts-shimmer 2.6s linear infinite;
-  }
-  @keyframes kokoro-tts-shimmer {
-    0% { background-position: 150% 0; }
-    100% { background-position: -50% 0; }
+    /* Higher-opacity aurora wash marking the chunk currently being read */
+    background-image: linear-gradient(115deg, rgba(94, 234, 212, 0.32), rgba(96, 165, 250, 0.28), rgba(147, 112, 219, 0.32)) !important;
+    background-size: 220% 100% !important;
+    animation: kokoro-aura-drift 5s ease-in-out infinite;
   }
   .kokoro-hover-play {
     position: absolute;
