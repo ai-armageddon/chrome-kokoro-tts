@@ -5,6 +5,69 @@ document.getElementById('resume').addEventListener('click', resumeAudio);
 document.getElementById('stop').addEventListener('click', stopAudio);
 document.getElementById('resetSpeed').addEventListener('click', resetSpeed);
 
+// Tab switching (Main / Settings)
+document.querySelectorAll('.tab-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b === btn));
+    document.getElementById('tab-main').classList.toggle('hidden', btn.dataset.tab !== 'main');
+    document.getElementById('tab-settings').classList.toggle('hidden', btn.dataset.tab !== 'settings');
+  });
+});
+
+const DEFAULT_HOTKEY = { code: 'KeyR', key: 'r', altKey: true, ctrlKey: false, shiftKey: false, metaKey: false };
+let recordingHotkey = false;
+
+function formatHotkey(hk) {
+  if (!hk || !hk.code) return 'None';
+  const parts = [];
+  if (hk.ctrlKey) parts.push('Ctrl');
+  if (hk.altKey) parts.push('Alt');
+  if (hk.shiftKey) parts.push('Shift');
+  if (hk.metaKey) parts.push('Cmd');
+  parts.push(hk.code.replace(/^Key/, '').replace(/^Digit/, ''));
+  return parts.join('+');
+}
+
+// Hotkey recorder: click the button, then press the combo (Esc cancels)
+document.addEventListener('keydown', (e) => {
+  if (!recordingHotkey) return;
+  e.preventDefault();
+  e.stopPropagation();
+
+  const hotkeyBtn = document.getElementById('hotkeyBtn');
+
+  if (e.key === 'Escape') {
+    recordingHotkey = false;
+    chrome.storage.local.get(['kokoro-tts-hotkey'], (result) => {
+      hotkeyBtn.textContent = formatHotkey(result['kokoro-tts-hotkey'] || DEFAULT_HOTKEY);
+    });
+    return;
+  }
+
+  // Wait for a non-modifier key so combos like Alt+R can be captured
+  if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
+
+  // Some virtual/remote keyboards omit e.code — derive one from e.key
+  let code = e.code;
+  if (!code && e.key) {
+    if (/^[a-z]$/i.test(e.key)) code = 'Key' + e.key.toUpperCase();
+    else if (/^[0-9]$/.test(e.key)) code = 'Digit' + e.key;
+    else code = e.key;
+  }
+
+  const hotkey = {
+    code: code,
+    key: e.key,
+    altKey: e.altKey,
+    ctrlKey: e.ctrlKey,
+    shiftKey: e.shiftKey,
+    metaKey: e.metaKey
+  };
+  chrome.storage.local.set({ 'kokoro-tts-hotkey': hotkey });
+  recordingHotkey = false;
+  hotkeyBtn.textContent = formatHotkey(hotkey);
+}, true);
+
 // Listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Popup received message:', request);
@@ -67,7 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
   highlightToggle.addEventListener('change', (e) => {
     const isEnabled = e.target.checked;
     chrome.storage.local.set({ 'kokoro-tts-highlight': isEnabled });
-    
+
     // Send highlight setting to content scripts
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]) {
@@ -79,6 +142,37 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
     });
+  });
+
+  // Settings tab: hotkey display + hover/aura toggles (content scripts pick
+  // up changes via chrome.storage.onChanged, no messaging needed)
+  const hotkeyBtn = document.getElementById('hotkeyBtn');
+  const hoverButtonToggle = document.getElementById('hoverButtonToggle');
+  const auraToggle = document.getElementById('auraToggle');
+
+  chrome.storage.local.get(['kokoro-tts-hotkey', 'kokoro-tts-hover-button', 'kokoro-tts-aura'], (result) => {
+    hotkeyBtn.textContent = formatHotkey(result['kokoro-tts-hotkey'] || DEFAULT_HOTKEY);
+    hoverButtonToggle.checked = result['kokoro-tts-hover-button'] !== false;
+    auraToggle.checked = result['kokoro-tts-aura'] !== false;
+  });
+
+  hotkeyBtn.addEventListener('click', () => {
+    recordingHotkey = true;
+    hotkeyBtn.textContent = 'Press keys…';
+  });
+
+  document.getElementById('hotkeyReset').addEventListener('click', () => {
+    recordingHotkey = false;
+    chrome.storage.local.set({ 'kokoro-tts-hotkey': DEFAULT_HOTKEY });
+    hotkeyBtn.textContent = formatHotkey(DEFAULT_HOTKEY);
+  });
+
+  hoverButtonToggle.addEventListener('change', (e) => {
+    chrome.storage.local.set({ 'kokoro-tts-hover-button': e.target.checked });
+  });
+
+  auraToggle.addEventListener('change', (e) => {
+    chrome.storage.local.set({ 'kokoro-tts-aura': e.target.checked });
   });
   
   // Get current speed when popup opens - use chrome.storage.local

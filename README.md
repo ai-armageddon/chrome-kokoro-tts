@@ -1,6 +1,6 @@
-# Kokoro TTS Chrome Extension
+# Aura Reader
 
-🎙️ A high-quality text-to-speech Chrome extension powered by Kokoro TTS with local API server support.
+🌌 A Chrome extension that reads any page aloud with local AI voices — hover a paragraph, tap a hotkey, and follow the glowing highlight. Powered by the Kokoro TTS engine running on a local API server.
 
 ## 🌐 Repository
 

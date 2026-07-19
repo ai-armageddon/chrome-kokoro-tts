@@ -12,10 +12,112 @@ let highlightedRange = null;
 let lastSelectedText = '';
 let lastSelectedRange = null;
 let highlightEnabled = true; // Default to enabled
+let hoverButtonEnabled = true; // Micro play button on hovered text blocks
+let auraEnabled = true; // Glow on hovered block after a short dwell
+let readHotkey = { code: 'KeyR', key: 'r', altKey: true, ctrlKey: false, shiftKey: false, metaKey: false };
+
+// Load settings saved by the popup; storage.onChanged keeps them live in every tab
+chrome.storage.local.get(
+  ['kokoro-tts-highlight', 'kokoro-tts-hover-button', 'kokoro-tts-aura', 'kokoro-tts-hotkey'],
+  (result) => {
+    if (result['kokoro-tts-highlight'] !== undefined) highlightEnabled = !!result['kokoro-tts-highlight'];
+    if (result['kokoro-tts-hover-button'] !== undefined) hoverButtonEnabled = !!result['kokoro-tts-hover-button'];
+    if (result['kokoro-tts-aura'] !== undefined) auraEnabled = !!result['kokoro-tts-aura'];
+    if (result['kokoro-tts-hotkey']) readHotkey = result['kokoro-tts-hotkey'];
+  }
+);
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  if (changes['kokoro-tts-highlight']) {
+    highlightEnabled = !!changes['kokoro-tts-highlight'].newValue;
+    if (!highlightEnabled) clearHighlighting();
+  }
+  if (changes['kokoro-tts-hover-button']) {
+    hoverButtonEnabled = !!changes['kokoro-tts-hover-button'].newValue;
+    if (!hoverButtonEnabled) clearHoverBlock();
+  }
+  if (changes['kokoro-tts-aura']) {
+    auraEnabled = !!changes['kokoro-tts-aura'].newValue;
+    if (!auraEnabled && hoverBlock) hoverBlock.classList.remove('kokoro-aura');
+  }
+  if (changes['kokoro-tts-hotkey'] && changes['kokoro-tts-hotkey'].newValue) {
+    readHotkey = changes['kokoro-tts-hotkey'].newValue;
+  }
+});
+
+// Styles for reading highlights, the hover play button, and the hover aura
+const kokoroStyles = document.createElement('style');
+kokoroStyles.setAttribute('data-kokoro-ui', 'true');
+kokoroStyles.textContent = `
+  .kokoro-tts-hl {
+    border-radius: 3px;
+    padding: 1px 0;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+  .kokoro-tts-read {
+    background-color: rgba(102, 126, 234, 0.18) !important;
+  }
+  .kokoro-tts-reading {
+    background-color: rgba(255, 233, 125, 0.4) !important;
+    background-image: linear-gradient(110deg, rgba(255,255,255,0) 35%, rgba(255,255,255,0.8) 50%, rgba(255,255,255,0) 65%) !important;
+    background-size: 300% 100% !important;
+    background-repeat: no-repeat !important;
+    animation: kokoro-tts-shimmer 2.6s linear infinite;
+  }
+  @keyframes kokoro-tts-shimmer {
+    0% { background-position: 150% 0; }
+    100% { background-position: -50% 0; }
+  }
+  .kokoro-hover-play {
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(102, 126, 234, 0.92);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    line-height: 1;
+    cursor: pointer;
+    z-index: 2147483646;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.8);
+    transition: opacity 0.15s ease, transform 0.15s ease, background 0.15s ease;
+    user-select: none;
+  }
+  .kokoro-hover-play.kokoro-visible {
+    opacity: 1;
+    transform: scale(1);
+    pointer-events: auto;
+  }
+  .kokoro-hover-play:hover {
+    background: rgba(84, 105, 212, 1);
+    transform: scale(1.15);
+  }
+  .kokoro-aura {
+    border-radius: 6px;
+    animation: kokoro-aura-glow 3.2s ease-in-out infinite;
+  }
+  @keyframes kokoro-aura-glow {
+    0% { box-shadow: 0 0 0 0 rgba(94, 234, 212, 0), 0 0 0 0 rgba(147, 112, 219, 0); }
+    20% { box-shadow: 0 0 14px 2px rgba(94, 234, 212, 0.45), 0 0 30px 7px rgba(96, 165, 250, 0.18); }
+    50% { box-shadow: 0 0 16px 3px rgba(147, 112, 219, 0.45), 0 0 34px 8px rgba(52, 211, 153, 0.2); }
+    80% { box-shadow: 0 0 14px 2px rgba(96, 165, 250, 0.45), 0 0 30px 7px rgba(216, 180, 254, 0.2); }
+    100% { box-shadow: 0 0 0 0 rgba(94, 234, 212, 0), 0 0 0 0 rgba(147, 112, 219, 0); }
+  }
+`;
+(document.head || document.documentElement).appendChild(kokoroStyles);
 
 // Create play button element
 function createPlayButton() {
   const button = document.createElement('div');
+  button.setAttribute('data-kokoro-ui', 'true');
   button.innerHTML = '▶';
   button.style.cssText = `
     position: absolute;
@@ -70,6 +172,7 @@ function createPlayButton() {
 // Create audio controls container
 function createAudioControls() {
   const controls = document.createElement('div');
+  controls.setAttribute('data-kokoro-ui', 'true');
   controls.style.cssText = `
     position: absolute;
     display: flex;
@@ -90,6 +193,7 @@ function createAudioControls() {
 // Create pause button for top-right corner
 function createPauseButton() {
   const button = document.createElement('div');
+  button.setAttribute('data-kokoro-ui', 'true');
   button.innerHTML = '❚❚';
   button.style.cssText = `
     position: fixed;
@@ -221,6 +325,7 @@ function createStopButton() {
 }
 function createChunkIndicator() {
   const indicator = document.createElement('div');
+  indicator.setAttribute('data-kokoro-ui', 'true');
   indicator.style.cssText = `
     position: absolute;
     background: #28a745;
@@ -459,6 +564,7 @@ window.addEventListener('scroll', () => {
   if (audioControls) {
     audioControls.style.display = 'none';
   }
+  clearHoverBlock(); // Position is stale after scrolling
 });
 
 // Hide button when window is resized
@@ -472,6 +578,7 @@ window.addEventListener('resize', () => {
   if (audioControls) {
     audioControls.style.display = 'none';
   }
+  clearHoverBlock();
 });
 
 // Listen for messages from background script
@@ -481,9 +588,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     isPlaying = false;
     currentChunk = 0;
     totalChunks = 0;
-    
+
     // Clear highlighting
     clearHighlighting();
+
+    // Reset hover play button loading state
+    if (hoverPlayBtn) {
+      hoverPlayBtn.textContent = '▶';
+    }
     
     // Hide pause button
     if (pauseButton) {
@@ -519,6 +631,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'audioStarted') {
     console.log('Audio started notification received for chunk:', request.chunkIndex);
     isPlaying = true;
+
+    // Reset hover play button loading state
+    if (hoverPlayBtn) {
+      hoverPlayBtn.textContent = '▶';
+    }
     
     // Update chunk indicator
     if (totalChunks > 1) {
@@ -606,24 +723,44 @@ function pauseAudio() {
   }
 }
 
+// Request TTS generation via the background script. The page itself must
+// never fetch localhost: Chrome attributes that request to the website and
+// shows a local-network-access permission prompt on every new site, while
+// the extension's own host_permissions cover it silently.
+function requestTTS(text, voice) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ action: 'generateTTS', text: text, voice: voice }, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      if (response && response.success && response.result) {
+        resolve(response.result);
+      } else {
+        reject(new Error(response && response.error ? response.error : 'Failed to generate speech'));
+      }
+    });
+  });
+}
+
 // Generate speech from selected text (same as popup)
-async function generateSpeechFromSelectedText() {
+async function generateSpeechFromSelectedText(showLoading = true) {
   // Use cached text instead of current selection
   const selectedText = lastSelectedText;
-  
+
   if (!selectedText) {
     console.log('No selected text to speak');
     return;
   }
-  
+
   // Use the cached range for highlighting
   highlightedRange = lastSelectedRange;
-  
+
   console.log('Starting TTS for:', selectedText);
-  
+
   try {
     // Show loading state
-    if (playButton) {
+    if (playButton && showLoading) {
       playButton.innerHTML = '...';
       playButton.style.cursor = 'wait';
       playButton.style.background = '#ffc107';
@@ -640,28 +777,8 @@ async function generateSpeechFromSelectedText() {
     }
     
     console.log('Sending TTS request:', { text: selectedText, voice, lang_code });
-    
-    const response = await fetch('http://localhost:8000/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text: selectedText,
-        voice: voice,
-        speed: 1.0, // Always generate at 1x speed
-        lang_code: lang_code,
-        return_phonemes: false
-      })
-    });
-    
-    console.log('TTS response status:', response.status);
-    
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('API error:', errorData);
-      throw new Error('API error: ' + response.status);
-    }
-    
-    const result = await response.json();
+
+    const result = await requestTTS(selectedText, voice);
     console.log('TTS result:', result);
     
     if (result.success && result.audio_url) {
@@ -796,28 +913,8 @@ async function speakSelectedText() {
     }
     
     console.log('Sending TTS request:', { text: selectedText, voice, lang_code });
-    
-    const response = await fetch('http://localhost:8000/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text: selectedText,
-        voice: voice,
-        speed: 1.0, // Always generate at 1x speed
-        lang_code: lang_code,
-        return_phonemes: false
-      })
-    });
-    
-    console.log('TTS response status:', response.status);
-    
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('API error:', errorData);
-      throw new Error('API error: ' + response.status);
-    }
-    
-    const result = await response.json();
+
+    const result = await requestTTS(selectedText, voice);
     console.log('TTS result:', result);
     
     if (result.success && result.audio_url) {
@@ -923,23 +1020,7 @@ async function speakChunkedText(text, voice) {
 }
     
     // Generate first chunk immediately and start playing
-    const firstChunkResponse = await fetch('http://localhost:8000/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text: chunks[0],
-        voice: voice,
-        speed: 1.0, // Always generate at 1x speed
-        lang_code: voice[0],
-        return_phonemes: false
-      })
-    });
-    
-    if (!firstChunkResponse.ok) {
-      throw new Error('Failed to generate first chunk');
-    }
-    
-    const firstResult = await firstChunkResponse.json();
+    const firstResult = await requestTTS(chunks[0], voice);
     if (!firstResult.success || !firstResult.audio_url) {
       throw new Error('Failed to generate first chunk');
     }
@@ -1089,24 +1170,7 @@ async function generateRemainingChunksContent(chunks, voice) {
       console.log(`Content script: Generating chunk ${i + 2} of ${chunks.length + 1}`);
       console.log(`Chunk text: "${chunks[i].substring(0, 100)}..."`);
       
-      const response = await fetch('http://localhost:8000/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: chunks[i],
-          voice: voice,
-          speed: 1.0, // Always generate at 1x speed
-          lang_code: voice[0],
-          return_phonemes: false
-        })
-      });
-      
-      if (!response.ok) {
-        console.error(`Content script: Failed to generate chunk ${i + 2}`);
-        continue;
-      }
-      
-      const result = await response.json();
+      const result = await requestTTS(chunks[i], voice);
       if (result.success && result.audio_url) {
         const audioUrl = `http://localhost:8000${result.audio_url}`;
         
@@ -1153,198 +1217,326 @@ function clearHighlighting() {
 
 // Highlight specific chunk of text with two-color system
 function highlightChunk(chunkText, chunkIndex) {
-  console.log('=== HIGHLIGHT DEBUG ===');
-  console.log('highlightEnabled:', highlightEnabled);
-  console.log('highlightedRange exists:', !!highlightedRange);
-  console.log('chunkText length:', chunkText ? chunkText.length : 0);
-  console.log('chunkIndex:', chunkIndex);
-  
   if (!highlightedRange || !chunkText || !highlightEnabled) {
-    console.log('No highlighted range or chunk text to highlight, or highlighting disabled');
     return;
   }
-  
+
   try {
     // Clear previous highlighting
     clearHighlighting();
-    
-    // Clone the range to work with
-    const range = highlightedRange.cloneRange();
-    const contents = range.cloneContents();
-    
-    // Create a temporary container to work with the text
+
+    // Text of the saved range, to recompute chunk boundaries
     const container = document.createElement('div');
-    container.appendChild(contents);
-    const fullText = container.textContent || container.innerText || '';
-    
-    console.log('Full text length:', fullText.length);
-    
-    // Find all chunks up to current one
+    container.appendChild(highlightedRange.cloneRange().cloneContents());
+    const fullText = container.textContent || '';
+
     const chunks = splitTextIntoChunks(fullText, 400);
-    console.log('Total chunks:', chunks.length, 'Current chunk index:', chunkIndex);
-    
-    let currentPos = 0;
-    
-    // Highlight all previous chunks in light blue
+    console.log('Highlighting chunk', chunkIndex, 'of', chunks.length);
+
+    // Chunks are located sequentially: each search starts where the
+    // previous chunk ended, so repeated sentences stay aligned
+    let searchFrom = 0;
+
+    // Light tint on chunks that have already been read
     for (let i = 0; i < chunkIndex && i < chunks.length; i++) {
-      console.log('Highlighting processed chunk', i, ':', chunks[i].substring(0, 30) + '...');
-      const chunkStart = fullText.indexOf(chunks[i], currentPos);
-      if (chunkStart !== -1) {
-        highlightTextInRange(chunks[i], '#E1F5FE', '#01579B'); // Light blue background, dark blue text
-        currentPos = chunkStart + chunks[i].length;
+      const end = highlightTextInRange(chunks[i], 'kokoro-tts-read', searchFrom);
+      if (end !== null) {
+        searchFrom = end;
       }
     }
-    
-    // Highlight current chunk in yellow
+
+    // Shimmering highlight on the chunk currently being read
     if (chunkIndex < chunks.length) {
-      console.log('Highlighting current chunk', chunkIndex, ':', chunks[chunkIndex].substring(0, 30) + '...');
-      const chunkStart = fullText.indexOf(chunks[chunkIndex], currentPos);
-      if (chunkStart !== -1) {
-        highlightTextInRange(chunks[chunkIndex], '#FFF59D', '#F57F17'); // Yellow background, dark yellow text
-      }
+      highlightTextInRange(chunks[chunkIndex], 'kokoro-tts-reading', searchFrom);
     }
-    
-    console.log('Highlighting complete!');
-    
-    // Check if highlights were applied
-    setTimeout(() => {
-      const highlights = document.querySelectorAll('[data-highlight="true"]');
-      console.log('Found', highlights.length, 'highlighted elements on page');
-      if (highlights.length > 0) {
-        console.log('First highlight element:', highlights[0]);
-        console.log('First highlight styles:', window.getComputedStyle(highlights[0]));
-      }
-    }, 100);
-    
-    console.log('=== END HIGHLIGHT DEBUG ===');
-    
   } catch (e) {
     console.error('Error highlighting text:', e);
-    console.log('=== END HIGHLIGHT DEBUG ===');
   }
 }
 
-// Helper function to highlight specific text within the range
-function highlightTextInRange(textToHighlight, bgColor, textColor) {
-  if (!textToHighlight) return;
-  
-  const range = highlightedRange.cloneRange();
-  const contents = range.cloneContents();
-  
-  const container = document.createElement('div');
-  container.appendChild(contents);
-  const fullText = container.textContent || container.innerText || '';
-  
-  const chunkStart = fullText.indexOf(textToHighlight);
-  if (chunkStart === -1) {
-    console.log('Could not find chunk text in range');
-    return;
+// Find chunkText within fullText ignoring all whitespace differences.
+// Needed because splitTextIntoChunks trims/rejoins sentences, so its chunks
+// don't match the DOM text character-for-character (lost or collapsed
+// whitespace). Returns { start, end } offsets in fullText, or null.
+function findFlexiblePosition(fullText, chunkText, fromIndex) {
+  const target = chunkText.replace(/\s+/g, '');
+  if (!target) return null;
+
+  // Map non-whitespace characters back to their positions in fullText
+  const chars = [];
+  const positions = [];
+  for (let i = fromIndex; i < fullText.length; i++) {
+    if (!/\s/.test(fullText[i])) {
+      chars.push(fullText[i]);
+      positions.push(i);
+    }
   }
-  
-  const chunkEnd = chunkStart + textToHighlight.length;
-  
-  // Collect all text nodes within the range
-  const textNodes = [];
+
+  const idx = chars.join('').indexOf(target);
+  if (idx === -1) return null;
+  return { start: positions[idx], end: positions[idx + target.length - 1] + 1 };
+}
+
+// Highlight one chunk of text within the saved range, searching from
+// fromIndex (an offset into the range's text). Returns the end offset of
+// the match so the caller can continue sequentially, or null if not found.
+function highlightTextInRange(textToHighlight, highlightClass, fromIndex = 0) {
+  if (!textToHighlight || !highlightedRange) return null;
+
+  const range = highlightedRange;
+
+  // Collect the text nodes intersecting the range, tracking the in-range
+  // portion of each (boundary nodes may be partially selected)
   const walker = document.createTreeWalker(
-    range.commonAncestorContainer.nodeType === Node.TEXT_NODE 
-      ? range.commonAncestorContainer.parentNode 
+    range.commonAncestorContainer.nodeType === Node.TEXT_NODE
+      ? range.commonAncestorContainer.parentNode
       : range.commonAncestorContainer,
     NodeFilter.SHOW_TEXT,
     {
       acceptNode: function(node) {
-        // Check if this node is within our original selection
         const nodeRange = document.createRange();
         nodeRange.selectNodeContents(node);
         return range.compareBoundaryPoints(Range.START_TO_END, nodeRange) > 0 &&
                range.compareBoundaryPoints(Range.END_TO_START, nodeRange) < 0
-          ? NodeFilter.FILTER_ACCEPT 
+          ? NodeFilter.FILTER_ACCEPT
           : NodeFilter.FILTER_REJECT;
       }
     }
   );
-  
+
+  const pieces = []; // { node, from, to, walkStart }
+  let walkText = '';
   while (walker.nextNode()) {
-    textNodes.push(walker.currentNode);
+    const node = walker.currentNode;
+    let from = 0;
+    let to = node.textContent.length;
+    if (node === range.startContainer) from = range.startOffset;
+    if (node === range.endContainer) to = range.endOffset;
+    pieces.push({ node: node, from: from, to: to, walkStart: walkText.length });
+    walkText += node.textContent.substring(from, to);
   }
-  
-  if (textNodes.length === 0) {
+
+  if (pieces.length === 0) {
     console.log('No text nodes found in range');
-    return;
+    return null;
   }
-  
-  // Calculate positions and find which nodes to highlight
-  let currentPos = 0;
+
+  const pos = findFlexiblePosition(walkText, textToHighlight, fromIndex);
+  if (!pos) {
+    console.log('Could not find chunk text in range');
+    return null;
+  }
+
   let firstHighlightSpan = null;
-  
-  for (const node of textNodes) {
-    const nodeText = node.textContent;
-    const nodeLength = nodeText.length;
-    const nodeStart = currentPos;
-    const nodeEnd = currentPos + nodeLength;
-    
-    // Check if this node overlaps with our chunk
-    if (nodeEnd > chunkStart && nodeStart < chunkEnd) {
-      // Calculate the portion of this node to highlight
-      const highlightStart = Math.max(0, chunkStart - nodeStart);
-      const highlightEnd = Math.min(nodeLength, chunkEnd - nodeStart);
-      
-      if (highlightStart < highlightEnd) {
-        try {
-          // Split the text node if needed and wrap the highlighted portion
-          const highlightedText = nodeText.substring(highlightStart, highlightEnd);
-          
-          // Create the highlight span
-          const span = document.createElement('span');
-          span.textContent = highlightedText;
-          span.style.backgroundColor = bgColor;
-          span.style.color = textColor;
-          span.style.transition = 'background-color 0.3s ease';
-          span.style.borderRadius = '2px';
-          span.style.padding = '1px 0';
-          span.setAttribute('data-highlight', 'true');
-          span.setAttribute('data-chunk', textToHighlight.substring(0, 20));
-          
-          // Replace the portion of the text node
-          const beforeText = nodeText.substring(0, highlightStart);
-          const afterText = nodeText.substring(highlightEnd);
-          
-          const parent = node.parentNode;
-          if (parent) {
-            // Insert before text if any
-            if (beforeText) {
-              parent.insertBefore(document.createTextNode(beforeText), node);
-            }
-            
-            // Insert the highlight span
-            parent.insertBefore(span, node);
-            
-            // Replace original node with after text or remove it
-            if (afterText) {
-              node.textContent = afterText;
-            } else {
-              parent.removeChild(node);
-            }
-            
-            highlightedSpans.push(span);
-            
-            if (!firstHighlightSpan) {
-              firstHighlightSpan = span;
-            }
-          }
-        } catch (e) {
-          console.error('Error highlighting text node:', e);
-        }
+
+  // Wrap matching portions in reverse document order so DOM edits don't
+  // invalidate the offsets of earlier pieces
+  for (let p = pieces.length - 1; p >= 0; p--) {
+    const piece = pieces[p];
+    const pieceLength = piece.to - piece.from;
+    const hlStart = Math.max(0, pos.start - piece.walkStart);
+    const hlEnd = Math.min(pieceLength, pos.end - piece.walkStart);
+    if (hlStart >= hlEnd) continue;
+
+    try {
+      const node = piece.node;
+      const nodeText = node.textContent;
+      const start = piece.from + hlStart;
+      const end = piece.from + hlEnd;
+
+      const span = document.createElement('span');
+      span.textContent = nodeText.substring(start, end);
+      span.className = 'kokoro-tts-hl ' + highlightClass;
+      span.setAttribute('data-highlight', 'true');
+
+      const parent = node.parentNode;
+      if (!parent) continue;
+
+      const beforeText = nodeText.substring(0, start);
+      const afterText = nodeText.substring(end);
+
+      if (beforeText) {
+        parent.insertBefore(document.createTextNode(beforeText), node);
       }
+      parent.insertBefore(span, node);
+      if (afterText) {
+        node.textContent = afterText;
+      } else {
+        parent.removeChild(node);
+      }
+
+      highlightedSpans.push(span);
+      firstHighlightSpan = span; // reverse loop: last assignment is first in document
+    } catch (e) {
+      console.error('Error highlighting text node:', e);
     }
-    
-    currentPos += nodeLength;
   }
-  
-  // Scroll the first highlighted span into view
-  if (firstHighlightSpan) {
-    console.log('Created highlight spans for:', textToHighlight.substring(0, 30) + '...');
+
+  // Follow the reading position, but only for the active chunk
+  if (firstHighlightSpan && highlightClass === 'kokoro-tts-reading') {
     firstHighlightSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  return pos.end;
+}
+
+// ===== Hover-to-read: micro play button, aura glow, and read hotkey =====
+
+const KOKORO_BLOCK_SELECTOR = 'p, h1, h2, h3, h4, h5, h6, li, blockquote, dd, dt, figcaption, pre, td, th';
+
+let hoverPlayBtn = null;
+let hoverBlock = null;
+let auraTimer = null;
+let hoverHideTimer = null;
+
+function ensureHoverPlayBtn() {
+  if (hoverPlayBtn) return hoverPlayBtn;
+  hoverPlayBtn = document.createElement('div');
+  hoverPlayBtn.className = 'kokoro-hover-play';
+  hoverPlayBtn.setAttribute('data-kokoro-ui', 'true');
+  hoverPlayBtn.textContent = '▶';
+  hoverPlayBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (hoverBlock) readBlock(hoverBlock);
+  });
+  document.body.appendChild(hoverPlayBtn);
+  return hoverPlayBtn;
+}
+
+function clearHoverBlock() {
+  if (auraTimer) {
+    clearTimeout(auraTimer);
+    auraTimer = null;
+  }
+  if (hoverHideTimer) {
+    clearTimeout(hoverHideTimer);
+    hoverHideTimer = null;
+  }
+  if (hoverBlock) {
+    hoverBlock.classList.remove('kokoro-aura');
+    hoverBlock = null;
+  }
+  if (hoverPlayBtn) {
+    hoverPlayBtn.classList.remove('kokoro-visible');
   }
 }
 
-console.log('Kokoro TTS content script loaded');
+function setHoverBlock(block) {
+  if (block === hoverBlock) {
+    if (hoverHideTimer) {
+      clearTimeout(hoverHideTimer);
+      hoverHideTimer = null;
+    }
+    return;
+  }
+  clearHoverBlock();
+  hoverBlock = block;
+
+  if (hoverButtonEnabled) {
+    const btn = ensureHoverPlayBtn();
+    btn.textContent = '▶';
+    const rect = block.getBoundingClientRect();
+    let left = rect.left + window.scrollX - 28;
+    if (left < 2) left = 2;
+    btn.style.left = left + 'px';
+    btn.style.top = (rect.top + window.scrollY + 1) + 'px';
+    btn.classList.add('kokoro-visible');
+  }
+
+  if (auraEnabled) {
+    // Aura fades in after a short dwell to mark the hotkey target
+    auraTimer = setTimeout(() => {
+      if (hoverBlock === block) {
+        block.classList.add('kokoro-aura');
+      }
+    }, 500);
+  }
+}
+
+document.addEventListener('mouseover', (e) => {
+  if (!hoverButtonEnabled && !auraEnabled) return;
+  const target = e.target;
+  if (!(target instanceof Element)) return;
+
+  // Moving onto our own UI keeps the current hover block active
+  if (target.closest('[data-kokoro-ui]')) {
+    if (hoverHideTimer) {
+      clearTimeout(hoverHideTimer);
+      hoverHideTimer = null;
+    }
+    return;
+  }
+
+  const block = target.closest(KOKORO_BLOCK_SELECTOR);
+  if (block && (block.textContent || '').trim().length >= 10) {
+    setHoverBlock(block);
+  } else if (hoverBlock && !hoverHideTimer) {
+    // Grace period so the pointer can cross the gap to the play button
+    hoverHideTimer = setTimeout(() => {
+      hoverHideTimer = null;
+      clearHoverBlock();
+    }, 250);
+  }
+});
+
+// Read a whole text block (from the hover button or the hotkey)
+function readBlock(block) {
+  const text = (block.textContent || '').trim();
+  if (!text) return;
+  const range = document.createRange();
+  range.selectNodeContents(block);
+  if (hoverPlayBtn && hoverPlayBtn.classList.contains('kokoro-visible')) {
+    hoverPlayBtn.textContent = '⋯';
+  }
+  startReading(text, range);
+}
+
+// Stop any current playback, then start reading the given text.
+// Text and range are captured here because the mouseup handler clears
+// lastSelectedText shortly after any click.
+function startReading(text, range) {
+  const begin = () => {
+    lastSelectedText = text;
+    lastSelectedRange = range;
+    generateSpeechFromSelectedText(false);
+  };
+  if (isPlaying) {
+    chrome.runtime.sendMessage({ action: 'stopAudio' }, () => {
+      isPlaying = false;
+      clearHighlighting();
+      begin();
+    });
+  } else {
+    begin();
+  }
+}
+
+// Hotkey: read the selection if there is one, otherwise the hovered block
+document.addEventListener('keydown', (e) => {
+  if (!readHotkey || (!readHotkey.code && !readHotkey.key)) return;
+  // Match on physical key code, falling back to e.key when either side
+  // lacks a code (some virtual/remote keyboards omit it)
+  const keyMatches = readHotkey.code && e.code
+    ? e.code === readHotkey.code
+    : !!(e.key && readHotkey.key && e.key.toLowerCase() === readHotkey.key.toLowerCase());
+  if (!keyMatches) return;
+  if (e.altKey !== !!readHotkey.altKey || e.ctrlKey !== !!readHotkey.ctrlKey ||
+      e.shiftKey !== !!readHotkey.shiftKey || e.metaKey !== !!readHotkey.metaKey) return;
+
+  const active = document.activeElement;
+  if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+
+  const selection = window.getSelection();
+  const selectedText = selection ? selection.toString().trim() : '';
+
+  if (selectedText && selection.rangeCount > 0) {
+    e.preventDefault();
+    startReading(selectedText, selection.getRangeAt(0).cloneRange());
+  } else if (hoverBlock) {
+    e.preventDefault();
+    readBlock(hoverBlock);
+  }
+}, true);
+
+console.log('Aura Reader content script loaded');

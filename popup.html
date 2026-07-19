@@ -2,6 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
+  <title>Aura Reader</title>
   <style>
     * {
       margin: 0;
@@ -266,18 +267,69 @@
       opacity: 0.5;
       cursor: not-allowed;
     }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 8px 12px;
+      border: none;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.08);
+      color: white;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+
+    .tab-btn:hover {
+      background: rgba(255,255,255,0.18);
+    }
+
+    .tab-btn.active {
+      background: rgba(255,255,255,0.25);
+      font-weight: 600;
+    }
+
+    .toggle-label {
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .toggle-label input {
+      margin-right: 6px;
+    }
+
+    .hotkey-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
   </style>
 </head>
 <body>
   <div class="header">
-    <h1>Kokoro TTS</h1>
-    <p>AI-Powered Text to Speech</p>
+    <h1>Aura Reader</h1>
+    <p>Listen to any page — local AI voices</p>
   </div>
   
   <div class="content">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="main">Main</button>
+      <button class="tab-btn" data-tab="settings">Settings</button>
+    </div>
+
+    <div id="tab-main">
     <div class="form-group">
       <label for="text">Text to speak:</label>
-      <textarea id="text" placeholder="Enter your text here or select text on the page...">Hello world, this is Kokoro TTS!</textarea>
+      <textarea id="text" placeholder="Enter your text here or select text on the page...">Hello world, this is Aura Reader!</textarea>
     </div>
     
     <div class="form-group">
@@ -304,28 +356,53 @@
       <div class="voice-info">Adjust the speaking speed (0.5x - 2.0x)</div>
     </div>
     
-    <div class="form-group">
-      <label>Text highlighting:</label>
-      <div style="display: flex; align-items: center; gap: 10px;">
-        <label style="display: flex; align-items: center; cursor: pointer; font-size: 13px;">
-          <input type="checkbox" id="highlightToggle" style="margin-right: 6px;">
-          <span>Highlight spoken text</span>
-        </label>
-      </div>
-      <div class="voice-info">Show background color on text being spoken</div>
-    </div>
-    
     <div class="button-group">
       <button id="speak" class="primary-btn">Speak Text</button>
       <button id="getSelected" class="secondary-btn">Use Selected</button>
     </div>
-    
+
     <div class="button-group">
       <button id="pause" class="secondary-btn">Pause</button>
       <button id="resume" class="secondary-btn">Resume</button>
       <button id="stop" class="secondary-btn">Stop</button>
     </div>
-    
+    </div>
+
+    <div id="tab-settings" class="hidden">
+      <div class="form-group">
+        <label>Read hotkey:</label>
+        <div class="hotkey-row">
+          <button id="hotkeyBtn" class="secondary-btn" style="flex: 1;">Alt+R</button>
+          <button id="hotkeyReset" class="reset-speed-btn">Reset</button>
+        </div>
+        <div class="voice-info">Click, press a combo (Esc cancels). Reads the selection, or the paragraph you're hovering.</div>
+      </div>
+
+      <div class="form-group">
+        <label class="toggle-label">
+          <input type="checkbox" id="hoverButtonToggle">
+          <span>Play button when hovering paragraphs</span>
+        </label>
+        <div class="voice-info">Small play button appears at the left edge of text blocks</div>
+      </div>
+
+      <div class="form-group">
+        <label class="toggle-label">
+          <input type="checkbox" id="auraToggle">
+          <span>Glow on hovered paragraph</span>
+        </label>
+        <div class="voice-info">Aurora glow marks what the hotkey will read</div>
+      </div>
+
+      <div class="form-group">
+        <label class="toggle-label">
+          <input type="checkbox" id="highlightToggle">
+          <span>Highlight spoken text</span>
+        </label>
+        <div class="voice-info">Shimmering highlight follows the text being read</div>
+      </div>
+    </div>
+
     <div id="status" class="status hidden"></div>
   </div>
   

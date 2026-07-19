@@ -1,8 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "Kokoro TTS",
+  "name": "Aura Reader",
   "version": "1.0",
-  "description": "Basic TTS using local Kokoro API",
+  "description": "Read any page aloud with local AI voices — hover a paragraph, tap a hotkey, and follow the glowing highlight.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "permissions": [
     "activeTab",
     "scripting",
@@ -14,7 +19,13 @@
     "http://localhost:8000/*"
   ],
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_title": "Aura Reader",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "background": {
     "service_worker": "background.js"

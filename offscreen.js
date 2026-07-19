@@ -15,8 +15,15 @@ chrome.runtime.sendMessage({ action: 'getSpeed' }, (speedResponse) => {
 
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  // Only handle messages the background explicitly routed here; untagged
+  // popup/content-script broadcasts also reach this context and acting on
+  // them would play or queue the same audio twice
+  if (request.target !== 'offscreen') {
+    return;
+  }
+
   console.log('Offscreen received message:', request);
-  
+
   if (request.action === 'playAudio') {
     // Get current speed before playing
     chrome.runtime.sendMessage({ action: 'getSpeed' }, (speedResponse) => {
@@ -110,6 +117,10 @@ async function playAudio(audioUrl, chunkText = null, chunkIndex = null) {
     }
     
     currentAudio = new Audio(audioUrl);
+    // defaultPlaybackRate must be set too: the media load algorithm resets
+    // playbackRate back to defaultPlaybackRate, so setting playbackRate
+    // alone gets silently undone by load() and playback starts at 1x
+    currentAudio.defaultPlaybackRate = currentSpeed;
     currentAudio.playbackRate = currentSpeed; // Set current speed
     currentAudio.volume = 1.0; // Ensure full volume
     isPlaying = true;
@@ -298,22 +309,12 @@ function processNextInQueue() {
 function setPlaybackSpeed(speed) {
   currentSpeed = speed;
   console.log('Setting playback speed to:', speed);
-  
-  // Apply to current audio if playing
-  if (currentAudio && isPlaying) {
-    // Store the current playback state
-    const wasPlaying = !currentAudio.paused;
-    const currentTime = currentAudio.currentTime;
-    
-    // Only change speed if it's different
-    if (Math.abs(currentAudio.playbackRate - speed) > 0.01) {
-      console.log('Changing speed from', currentAudio.playbackRate, 'to', speed);
-      currentAudio.playbackRate = speed;
-      
-      // Don't pause or seek - just change the rate
-      console.log('Speed changed successfully');
-    }
+
+  // Apply to current audio (playing or paused)
+  if (currentAudio) {
+    currentAudio.defaultPlaybackRate = speed;
+    currentAudio.playbackRate = speed;
   }
 }
 
-console.log('Kokoro TTS offscreen script loaded');
+console.log('Aura Reader offscreen script loaded');
