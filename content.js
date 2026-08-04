@@ -101,7 +101,9 @@ kokoroStyles.textContent = `
     color: var(--kokoro-aura-fg) !important;
   }
   /* Per-line aura overlays: appended to <body> and sized to the text's line
-     rects, so the glow hugs the text and is never clipped by page containers */
+     rects, so the glow hugs the text and is never clipped by page containers.
+     The wash is blurred so it reads as a soft cloud of light — no hard
+     rectangle edge around the text. */
   .kokoro-aura-line {
     position: absolute;
     border-radius: 5px;
@@ -109,9 +111,10 @@ kokoroStyles.textContent = `
     z-index: 2147483645;
     opacity: 0;
     transition: opacity 0.45s ease;
-    background-image: linear-gradient(115deg, rgba(94, 234, 212, 0.16), rgba(96, 165, 250, 0.13), rgba(147, 112, 219, 0.16));
+    background-image: linear-gradient(115deg, rgba(94, 234, 212, 0.2), rgba(96, 165, 250, 0.17), rgba(147, 112, 219, 0.2));
     background-size: 220% 100%;
-    animation: kokoro-aura-glow 3.2s ease-in-out infinite, kokoro-aura-drift 6s ease-in-out infinite;
+    filter: blur(7px);
+    animation: kokoro-aura-breathe 3.2s ease-in-out infinite, kokoro-aura-drift 6s ease-in-out infinite;
   }
   .kokoro-aura-line.kokoro-aura-on {
     opacity: 1;
@@ -120,11 +123,9 @@ kokoroStyles.textContent = `
     0%, 100% { background-position: 0% 50%; }
     50% { background-position: 100% 50%; }
   }
-  @keyframes kokoro-aura-glow {
-    0%, 100% { box-shadow: 0 0 10px 1px rgba(94, 234, 212, 0.25), 0 0 22px 3px rgba(147, 112, 219, 0.12); }
-    25% { box-shadow: 0 0 14px 2px rgba(94, 234, 212, 0.38), 0 0 28px 6px rgba(96, 165, 250, 0.16); }
-    50% { box-shadow: 0 0 15px 2px rgba(147, 112, 219, 0.38), 0 0 32px 7px rgba(52, 211, 153, 0.16); }
-    75% { box-shadow: 0 0 14px 2px rgba(96, 165, 250, 0.38), 0 0 28px 6px rgba(216, 180, 254, 0.16); }
+  @keyframes kokoro-aura-breathe {
+    0%, 100% { filter: blur(6px) brightness(1); }
+    50% { filter: blur(9px) brightness(1.35); }
   }
 `;
 (document.head || document.documentElement).appendChild(kokoroStyles);
@@ -568,7 +569,9 @@ document.addEventListener('click', (e) => {
   }, 10);
 });
 
-// Hide button when scrolling
+// Hide button when scrolling. Capture phase so scrolls of inner containers
+// (app shells with overflow:hidden body + a scrolling panel) are caught too —
+// scroll events don't bubble, so a plain window listener misses those.
 window.addEventListener('scroll', () => {
   if (playButton) {
     playButton.style.display = 'none';
@@ -580,7 +583,7 @@ window.addEventListener('scroll', () => {
     audioControls.style.display = 'none';
   }
   clearHoverBlock(); // Position is stale after scrolling
-});
+}, true);
 
 // Hide button when window is resized
 window.addEventListener('resize', () => {
@@ -1399,6 +1402,21 @@ function highlightTextInRange(textToHighlight, highlightClass, fromIndex = 0) {
 
 const KOKORO_BLOCK_SELECTOR = 'p, h1, h2, h3, h4, h5, h6, li, blockquote, dd, dt, figcaption, pre, td, th';
 
+// Controls the hover UI must never cover or trigger from
+const KOKORO_INTERACTIVE_SELECTOR = 'button, input, select, textarea, summary, '
+  + '[role="button"], [role="checkbox"], [role="switch"], [role="radio"], '
+  + '[role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], '
+  + '[role="option"], [role="tab"], [contenteditable="true"]';
+
+// Table cells in selectable list rows (Gmail's inbox, admin data grids) are
+// UI, not reading content — the play button would land on the row's
+// checkbox/star column
+function isSelectableRowCell(block) {
+  if (!/^t[dh]$/i.test(block.tagName)) return false;
+  const row = block.closest('tr, [role="row"]');
+  return !!(row && row.querySelector('input[type="checkbox"], [role="checkbox"]'));
+}
+
 let hoverPlayBtn = null;
 let hoverBlock = null;
 let auraTimer = null;
@@ -1417,13 +1435,22 @@ function relativeLuminance(r, g, b) {
   return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
 }
 
+// Parse an rgb()/rgba() color string into { r, g, b, a }
+function parseColor(str) {
+  const m = (str || '').match(/rgba?\(([^)]*)\)/);
+  if (!m) return null;
+  const parts = m[1].split(/[,\s/]+/).filter(Boolean).map(parseFloat);
+  if (parts.length < 3 || parts.some(isNaN)) return null;
+  return { r: parts[0], g: parts[1], b: parts[2], a: parts.length >= 4 ? parts[3] : 1 };
+}
+
 // Walk up the DOM to find the effective background luminance behind el
 function effectiveBackgroundLuminance(el) {
   let node = el;
   while (node && node.nodeType === Node.ELEMENT_NODE) {
-    const m = (getComputedStyle(node).backgroundColor || '').match(/[\d.]+/g);
-    if (m && m.length >= 4 && parseFloat(m[3]) > 0.05) {
-      return relativeLuminance(parseFloat(m[0]), parseFloat(m[1]), parseFloat(m[2]));
+    const c = parseColor(getComputedStyle(node).backgroundColor);
+    if (c && c.a > 0.05) {
+      return relativeLuminance(c.r, c.g, c.b);
     }
     node = node.parentElement;
   }
@@ -1605,7 +1632,12 @@ document.addEventListener('mouseover', (e) => {
     return;
   }
 
-  const block = target.closest(KOKORO_BLOCK_SELECTOR);
+  let block = target.closest(KOKORO_BLOCK_SELECTOR);
+  // Never trigger from interactive controls or selectable list rows
+  // (e.g. Gmail's inbox rows with their checkbox/star column)
+  if (block && (target.closest(KOKORO_INTERACTIVE_SELECTOR) || isSelectableRowCell(block))) {
+    block = null;
+  }
   if (block && (block.textContent || '').trim().length >= 10) {
     setHoverBlock(block);
   } else if (hoverBlock && !hoverHideTimer) {
